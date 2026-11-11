@@ -8,8 +8,9 @@ archive. This document describes what is built in `src/` and why.
 **A message arrives as a draft, never as active memory.**
 
 `stele pull` writes each body with `mem save - --external --from <sender>
---project <project>`, an anathem feature that already exists: the note is
-invisible to search, keeps who sent it, and waits for `mem accept`.
+--project <project> --ext-id stele:<message-id>`, an anathem feature that
+already exists: the note is invisible to search, keeps who sent it, and waits
+for `mem accept`.
 
 A remote agent cannot write into your memory. It can leave something you
 accept. That is the difference between a mailbox and an open door, and it is
@@ -121,6 +122,27 @@ somebody accepts.
 Falling back to a save without the key would reintroduce the duplicate this
 exists to prevent; a clear failure beats a silent regression.
 
+## Announcing a draft
+
+The draft rule works because a person looks. A mailbox whose drafts nobody
+knows about is a mailbox nobody empties, so anathem 1.0 says in the MCP
+greeting how many received memories are waiting, and names the command:
+
+```
+3 received memories are waiting for review and cannot be searched until
+accepted: `mem recent --all --external`.
+```
+
+A count and a command, and not one character more: no title, no sender, no
+body. The untrusted text still does not enter the system prompt before
+somebody agrees to let it in. It is about 22 tokens, only when at least one
+draft exists, and `handoff_items: 0` turns it off with the rest of the
+greeting.
+
+`mem recent --external` also stopped reporting an empty window when the mail
+is filed under another project, which is the ordinary case when the sender
+chooses the project name.
+
 ## Resource targets
 
 The point of a separate binary is that the mailbox is cheap enough to leave
@@ -173,6 +195,9 @@ that led here, with the size each crate adds to a stripped binary, is in
   and the flag as an open question; anathem shipped it, and `pull` uses it, so
   a retried delivery is one draft. The mailbox now requires anathem 0.10 rather
   than saving without the key.
+- **The greeting announces drafts.** anathem 1.0 adds a count and the command
+  when received memories are waiting (22 tokens, only when there are any), so
+  the mailbox no longer depends on somebody remembering to look.
 - **No HTTP client crate.** `ureq` without TLS still adds 343 KB; the client
   is the same `httparse` code pointed at a response.
 - **No `chrono`.** Formatting a UTC timestamp and keeping epoch seconds is
@@ -190,9 +215,9 @@ that led here, with the size each crate adds to a stripped binary, is in
 - **Not a chat.** No threads, presence or typing indicators.
 - **Not multiuser.** One token per mailbox, no accounts, no permissions. A
   shared workspace for teams is a different product built beside this one.
-- **Does not push.** Delivery is a draft; the agent sees it with `mem recent
-  --all --external`. Making arrivals appear in the MCP greeting needs a count
-  in anathem's handoff (~20 lines) and is a separate decision.
+- **Does not push.** Delivery is a draft; the greeting says how many are
+  waiting and the command, and the content stays behind `mem recent --all
+  --external` and a person's `mem accept`.
 - **Is not useful alone.** Without `mem` on the receiving side, nothing
   archives what arrives.
 
@@ -217,11 +242,6 @@ that led here, with the size each crate adds to a stripped binary, is in
 
 ## Open questions
 
-- **A count in the MCP greeting.** "3 messages waiting; `mem recent
-  --all --external`" is ~20 lines in anathem and would save the agent from
-  discovering the queue by accident. It spends tokens in every session, so it
-  should be measured before it is added. Tracked in
-  [anathem#60](https://gitlab.com/__alexander__/anathem/-/issues/60).
 - **Where the pull runs.** A timer is enough because a person accepts the
   drafts anyway. A `SessionStart` hook would make it immediate, at the cost of
   one agent-specific integration per client.

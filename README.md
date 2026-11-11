@@ -36,7 +36,9 @@ is no `libsqlite3-dev` to install and nothing to match against the system.
 The receiving side needs **anathem 0.10 or newer**: `stele pull` hands each
 body to `mem save --external --ext-id`, so a retried delivery lands in the
 draft that already exists. An older `mem` does not know the flag; the pull
-stops before acknowledging rather than saving a duplicate.
+stops before acknowledging rather than saving a duplicate. anathem 1.0 also
+announces waiting drafts in the MCP greeting, which is what keeps the mailbox
+from going unnoticed.
 
 ## Set it up
 
@@ -95,9 +97,11 @@ mem accept 42
 `mem recent` defaults to the project derived from the directory you are
 standing in, and a message may have been filed under another one. `--all`
 shows everything, drafts included; since anathem 0.10 the command also says so
-when mail is filed under another project. `mem show 42` reads one; `mem accept
-42` lets it into search. Accepted messages keep `[from: laptop]` wherever they
-appear.
+when mail is filed under another project. anathem 1.0 goes one step further:
+the MCP greeting says how many received memories are waiting (a count and the
+command, never their content), so the agent knows to look. `mem show 42` reads
+one; `mem accept 42` lets it into search. Accepted messages keep
+`[from: laptop]` wherever they appear.
 
 ## How the other agents use it
 
@@ -133,9 +137,9 @@ what routes the note to the right work.
 - **Not a chat.** No threads, presence or typing indicators.
 - **Not multiuser.** One token per mailbox, no accounts or permissions. A
   shared workspace for teams is a different product.
-- **Does not push.** Delivery is a draft; the agent sees it with `mem recent
-  --all --external`, and only after a person accepts it does it reach search
-  and the MCP greeting.
+- **Does not push.** Delivery is a draft; the greeting says how many are
+  waiting and the command, and the content stays behind `mem recent --all
+  --external` until a person accepts it.
 - **Is not useful alone.** Without `mem` on the receiving side, nothing
   archives what arrives.
 - **Does not do TLS.** Use a network that already encrypts (tailnet, VPN, SSH
