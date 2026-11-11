@@ -4,10 +4,10 @@ A *stele* is a stone slab with an inscription, set upright where whoever comes
 next will find it. This one carries a message from one coding agent to another
 and leaves it in [anathem](https://gitlab.com/__alexander__/anathem) as a draft.
 
-**Status: design only.** There is no code yet; `docs/design.md` is the proposal.
+**Status: v0.1.0, working.** One binary, one SQLite file, no async runtime.
 
 ```
-stele send --to opencode "The API contract changed to v2"
+stele send --to dell --project api "The API contract changed to v2"
 stele pull
 stele serve
 ```
@@ -21,8 +21,104 @@ It adds no MCP tools and no prompt surface: the agent talks through its shell
 and remembers through `mem`. If the other side does not run anathem, this is a
 mailbox nobody empties.
 
-Design, transport, dependencies and the resource targets:
-[`docs/design.md`](docs/design.md).
+## Install
+
+Rust 1.89 or newer (built with 1.99).
+
+```bash
+cargo build --release
+install -m 755 target/release/stele ~/.local/bin/stele
+```
+
+The binary is about 2.7 MB, stripped. `rusqlite` compiles SQLite in, so there
+is no `libsqlite3-dev` to install and nothing to match against the system.
+
+## Set it up
+
+On the machine that is always on — the mailbox:
+
+```bash
+stele --db ~/.local/share/stele/stele.db token add dell
+stele --db ~/.local/share/stele/stele.db token add laptop
+stele --db ~/.local/share/stele/stele.db serve --bind <tailscale-ip>:3900
+```
+
+Each `token add` prints the token **once**, on stdout, and how to use it on
+stderr. The server listens on plain HTTP: put it on the tailnet, where
+WireGuard already encrypts the connection, and do not expose it anywhere else.
+
+On every machine, once:
+
+```bash
+stele login --url http://<tailscale-ip>:3900 --token -
+# paste the token, then Ctrl-D
+stele whoami
+```
+
+The config lives in `~/.config/stele/config.json`, mode `0600`.
+
+## Use it
+
+```bash
+stele send --to dell --project api "The contract changed to v2"
+printf 'the whole note\n' | stele send --to dell --project api -
+stele peers
+stele pull --dry-run
+stele pull
+mem recent --all --external
+mem accept 42
+```
+
+`mem recent` defaults to the project derived from the directory you are
+standing in, and a message may have been filed under another one. `--all`
+shows everything, drafts included; `mem show 42` reads one; `mem accept 42`
+lets it into search. Accepted messages keep `[from: laptop]` wherever they
+appear.
+
+## How the other agents use it
+
+Any agent with a shell — opencode, Claude Code, Codex, Cursor — uses it with
+no per-client configuration. The cheapest integration is one line in the
+agent's instruction file:
+
+```
+To leave a note for the agent on another machine: stele send --to <mailbox> --project <project> "..."
+```
+
+That is roughly 25 tokens per session. Sending is the agent's decision, so it
+has to know the command exists. Receiving does not have to be in the prompt:
+run `stele pull` from a systemd timer (or a `SessionStart` hook) and the draft
+is waiting in anathem the next time somebody looks. A person still accepts it;
+that is the point of the design, not a missing feature.
+
+Who is "from" is decided by the token, not by the message, so an agent cannot
+sign as another machine. Every agent on one machine shares
+`~/.anathem/mem.db`, so a mailbox addresses a machine; the `project` field is
+what routes the note to the right work.
+
+## Design
+
+- [docs/design.md](docs/design.md) — transport, storage, why the draft rule
+  decides everything else, and what changed from the proposal.
+- [docs/benchmarks.md](docs/benchmarks.md) — measured binary size, RSS, idle
+  CPU, latency, database growth, and the dependency comparison.
+- [deploy/](deploy/) — systemd user units for `serve` and for the pull timer.
+
+## What it deliberately does not do
+
+- **Not a chat.** No threads, presence or typing indicators.
+- **Not multiuser.** One token per mailbox, no accounts or permissions. A
+  shared workspace for teams is a different product.
+- **Does not push.** Delivery is a draft; the agent sees it with `mem recent
+  --all --external`, and only after a person accepts it does it reach search
+  and the MCP greeting.
+- **Is not useful alone.** Without `mem` on the receiving side, nothing
+  archives what arrives.
+- **Does not do TLS.** Terminate it in nginx, or stay on the tailnet.
+- **Delivers at least once.** If `stele pull` dies between writing the draft
+  and the acknowledgement, the message comes back and anathem gets a second
+  draft; `mem forget <id>` removes it. A small `--ext-id` patch to anathem
+  would make that impossible; see the open questions in the design.
 
 ## License
 
