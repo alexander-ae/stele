@@ -4,8 +4,9 @@ A mailbox between coding agents, on separate machines, with anathem as the
 archive. This document describes what is built in `src/` and why.
 
 The landscape it borrows from is in [prior-art.md](prior-art.md), the threat
-model in [security.md](security.md), and the note format in
-[handoff.md](handoff.md).
+model in [security.md](security.md), the note format in
+[handoff.md](handoff.md), and the setup reference in
+[installation.md](installation.md).
 
 ## The rule that decides everything else
 

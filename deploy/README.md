@@ -1,5 +1,10 @@
 # Deploying stele
 
+The full installation and configuration reference is
+[`docs/installation.md`](../docs/installation.md). This file is the systemd
+companion: the units, their paths and the caveats that only matter when the
+mailbox runs as a user service.
+
 Systemd user units, no sudo. The mailbox runs on the machine that is always
 on; `pull` runs wherever the messages should land.
 
