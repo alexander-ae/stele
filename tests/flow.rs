@@ -5,6 +5,8 @@ use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Output, Stdio};
 
+use stele::http::{call, Endpoint};
+
 struct Server {
     child: Child,
     url: String,
@@ -151,6 +153,7 @@ fn a_message_travels_as_a_draft_and_is_acknowledged_once() {
     let sent = send(&laptop, "dell", "api", "The API contract changed to v2");
     let sent = ok(sent);
     assert!(sent.starts_with("queued as "), "{sent}");
+    let message_id = sent.trim_start_matches("queued as ").to_string();
 
     let mem = fake_mem(dir.path());
     let log = dir.path().join("mem.log");
@@ -166,6 +169,10 @@ fn a_message_travels_as_a_draft_and_is_acknowledged_once() {
     assert!(
         recorded.contains("save - --external --from laptop --project api"),
         "{recorded}"
+    );
+    assert!(
+        recorded.contains(&format!("--ext-id stele:{message_id}")),
+        "the retry key has to be the server's message id: {recorded}"
     );
     assert!(
         recorded.contains("The API contract changed to v2"),
@@ -328,4 +335,94 @@ fn an_oversized_body_is_refused_before_it_is_stored() {
     let log = dir.path().join("mem.log");
     let pulled = ok(pull(&dell, &mem, &log, &[]));
     assert!(pulled.is_empty(), "{pulled}");
+}
+
+#[test]
+fn the_sender_comes_from_the_token_not_the_body() {
+    let dir = tempdir();
+    let db = dir.path().join("stele.db");
+    let dell_token = token(&db, "dell");
+    let server = start(&db);
+    let dell = login(&server, dir.path(), "dell", &dell_token);
+    let endpoint = Endpoint::parse(&server.url).unwrap();
+
+    // Both spellings someone might try; serde ignores what the type does not
+    // declare, and the server has no field to read them from anyway.
+    let payload = serde_json::json!({
+        "client_id": "forged",
+        "to": "dell",
+        "project": "api",
+        "body": "this claims another sender",
+        "from": "mallory",
+        "from_agent": "mallory"
+    });
+    let (status, raw) = call(
+        &endpoint,
+        "POST",
+        "/messages",
+        Some(&dell_token),
+        Some(&serde_json::to_vec(&payload).unwrap()),
+    )
+    .unwrap();
+    assert_eq!(status, 201, "{}", String::from_utf8_lossy(&raw));
+
+    let mem = fake_mem(dir.path());
+    let log = dir.path().join("mem.log");
+    let dry = ok(pull(&dell, &mem, &log, &["--dry-run"]));
+    assert!(
+        dry.contains("dell -> api"),
+        "filed under the token's mailbox: {dry}"
+    );
+    assert!(
+        !dry.contains("mallory"),
+        "a body cannot sign as another mailbox: {dry}"
+    );
+}
+
+#[test]
+fn another_mailbox_cannot_read_this_inbox() {
+    let dir = tempdir();
+    let db = dir.path().join("stele.db");
+    let dell_token = token(&db, "dell");
+    let laptop_token = token(&db, "laptop");
+    let server = start(&db);
+    let dell = login(&server, dir.path(), "dell", &dell_token);
+    let _laptop = login(&server, dir.path(), "laptop", &laptop_token);
+    ok(send(&dell, "dell", "api", "for dell only"));
+
+    let endpoint = Endpoint::parse(&server.url).unwrap();
+    let (status, raw) = call(
+        &endpoint,
+        "GET",
+        "/messages?to=dell&unread=1",
+        Some(&laptop_token),
+        None,
+    )
+    .unwrap();
+    assert_eq!(status, 200);
+    let inbox: serde_json::Value = serde_json::from_slice(&raw).unwrap();
+    assert_eq!(inbox["messages"].as_array().unwrap().len(), 0);
+
+    // The parameter is ignored in both directions: the token decides.
+    let (status, raw) = call(
+        &endpoint,
+        "GET",
+        "/messages?to=laptop&unread=1",
+        Some(&dell_token),
+        None,
+    )
+    .unwrap();
+    assert_eq!(status, 200);
+    let inbox: serde_json::Value = serde_json::from_slice(&raw).unwrap();
+    assert_eq!(inbox["messages"].as_array().unwrap().len(), 1);
+}
+
+#[test]
+fn two_mailboxes_cannot_share_a_name() {
+    let dir = tempdir();
+    let db = dir.path().join("stele.db");
+    let _ = token(&db, "dell");
+    let again = stele(&["--db", db.to_str().unwrap(), "token", "add", "dell"], &[]);
+    assert!(!again.status.success());
+    assert!(String::from_utf8_lossy(&again.stderr).contains("already exists"));
 }

@@ -39,6 +39,9 @@ linger: `loginctl enable-linger $USER` (this may need sudo once).
 
 ## Every client machine
 
+The receiving side needs anathem 0.10 or newer: `stele pull` passes
+`--ext-id`, the flag that makes a retried delivery one draft.
+
 ```bash
 stele login --url http://<tailscale-ip>:3900 --token -
 # paste the token printed by `token add`, then Ctrl-D

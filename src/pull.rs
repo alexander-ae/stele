@@ -1,10 +1,11 @@
 //! `stele pull`: fetch what is addressed to this mailbox and hand each body to
 //! `mem save --external`, so what arrives is a draft and never active memory.
 //!
-//! Delivery is at-least-once. A message is acknowledged only after `mem` exits
-//! zero; if the process dies in between, the message comes back and anathem
-//! gets a second draft. That is the honest failure mode: a duplicate someone
-//! can delete beats a note nobody knows about.
+//! A message is acknowledged only after `mem` exits zero. With anathem 0.10 or
+//! newer the body also carries `--ext-id stele:<message id>`, so a retry after
+//! a lost acknowledgement collapses into the draft that already exists instead
+//! of writing a second one. Without that flag the failure mode is a duplicate
+//! someone can delete, which still beats a note nobody knows about.
 
 use crate::api::Message;
 use crate::client::Api;
@@ -61,10 +62,11 @@ fn save_draft(api: &Api, message: &Message, options: &Options) -> Result<()> {
         "--project",
         &message.project,
     ]);
+    command.arg("--ext-id").arg(ext_id(message));
     command
         .stdin(Stdio::piped())
-        .stdout(Stdio::inherit())
-        .stderr(Stdio::inherit());
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
     let mut child = command.spawn().with_context(|| {
         format!("cannot run {mem:?}; pass --mem or set \"mem_bin\" in the config")
     })?;
@@ -74,11 +76,22 @@ fn save_draft(api: &Api, message: &Message, options: &Options) -> Result<()> {
             .write_all(message.body.as_bytes())
             .context("cannot send the message body to mem")?;
     }
-    let status = child.wait().context("waiting for mem")?;
-    if !status.success() {
+    // Captured and reprinted instead of inherited: on failure the child's own
+    // error is still what the person sees, and stele can add the one sentence
+    // that turns "unexpected argument" into an upgrade instruction.
+    let output = child.wait_with_output().context("waiting for mem")?;
+    std::io::stdout().write_all(&output.stdout)?;
+    std::io::stderr().write_all(&output.stderr)?;
+    if !output.status.success() {
+        let hint = if old_mem(&output.stderr) {
+            " (stele needs anathem 0.10 or newer: this `mem` does not know --ext-id)"
+        } else {
+            ""
+        };
         bail!(
-            "mem save failed for message {} ({status}); it stays unread",
-            message.id
+            "mem save failed for message {} ({}){hint}; it stays unread",
+            message.id,
+            output.status
         );
     }
     api.ack(&message.id).with_context(|| {
@@ -90,6 +103,19 @@ fn save_draft(api: &Api, message: &Message, options: &Options) -> Result<()> {
     Ok(())
 }
 
+/// The key anathem stores in `memories.ext_id` to tell a retry from a new
+/// message. Namespaced because that unique column is shared with the document
+/// ids `mem migrate` writes; the server's message id is already random and
+/// stable.
+fn ext_id(message: &Message) -> String {
+    format!("stele:{}", message.id)
+}
+
+fn old_mem(stderr: &[u8]) -> bool {
+    let text = String::from_utf8_lossy(stderr).to_ascii_lowercase();
+    text.contains("--ext-id") && (text.contains("unexpected") || text.contains("unrecognized"))
+}
+
 fn first_line(body: &str) -> String {
     body.lines()
         .next()
@@ -98,4 +124,30 @@ fn first_line(body: &str) -> String {
         .chars()
         .take(100)
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_ext_id_is_namespaced_and_stable() {
+        let message = Message {
+            id: "0123456789abcdef".into(),
+            from: "laptop".into(),
+            project: "api".into(),
+            body: "hi".into(),
+            created: 0,
+        };
+        assert_eq!(ext_id(&message), "stele:0123456789abcdef");
+        assert_eq!(ext_id(&message), ext_id(&message));
+    }
+
+    #[test]
+    fn an_old_mem_is_recognised_by_its_error() {
+        assert!(old_mem(
+            b"error: unexpected argument '--ext-id' found\n\nUsage: mem save ..."
+        ));
+        assert!(!old_mem(b"error: there is no database"));
+    }
 }

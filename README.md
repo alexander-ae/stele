@@ -33,6 +33,11 @@ install -m 755 target/release/stele ~/.local/bin/stele
 The binary is about 2.7 MB, stripped. `rusqlite` compiles SQLite in, so there
 is no `libsqlite3-dev` to install and nothing to match against the system.
 
+The receiving side needs **anathem 0.10 or newer**: `stele pull` hands each
+body to `mem save --external --ext-id`, so a retried delivery lands in the
+draft that already exists. An older `mem` does not know the flag; the pull
+stops before acknowledging rather than saving a duplicate.
+
 ## Set it up
 
 On the machine that is always on — the mailbox:
@@ -89,8 +94,9 @@ mem accept 42
 
 `mem recent` defaults to the project derived from the directory you are
 standing in, and a message may have been filed under another one. `--all`
-shows everything, drafts included; `mem show 42` reads one; `mem accept 42`
-lets it into search. Accepted messages keep `[from: laptop]` wherever they
+shows everything, drafts included; since anathem 0.10 the command also says so
+when mail is filed under another project. `mem show 42` reads one; `mem accept
+42` lets it into search. Accepted messages keep `[from: laptop]` wherever they
 appear.
 
 ## How the other agents use it
@@ -134,11 +140,11 @@ what routes the note to the right work.
   archives what arrives.
 - **Does not do TLS.** Use a network that already encrypts (tailnet, VPN, SSH
   tunnel), or put the mailbox behind one; the client refuses `https://`.
-- **Delivers at least once.** If `stele pull` dies between writing the draft
-  and the acknowledgement, the message comes back and anathem gets a second
-  draft; `mem forget <id>` removes it. A small `--ext-id` patch to anathem
-  ([#59](https://gitlab.com/__alexander__/anathem/-/issues/59)) would make that
-  impossible.
+- **Delivers exactly once on anathem 0.10+.** `pull` passes `--ext-id
+  stele:<message id>`, so a retry after a lost acknowledgement writes nothing:
+  the draft that already exists is the one somebody accepts. With an older
+  `mem` the flag is rejected and the message stays in the mailbox; it never
+  falls back to a second draft.
 
 ## License
 

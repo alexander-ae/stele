@@ -15,10 +15,10 @@ A remote agent cannot write into your memory. It can leave something you
 accept. That is the difference between a mailbox and an open door, and it is
 why this is a separate program instead of an option inside `mem`.
 
-The receiving side needed **no changes in anathem** for this version. The one
-patch worth considering is `mem save --external --ext-id`, which would let
-`pull` pass `ext_id = stele:<message-id>` and make delivery exactly-once; see
-the open questions.
+The receiving side needs **anathem 0.10 or newer**, which added
+`mem save --external --ext-id` (anathem#59), the one patch this design asked
+for: `pull` passes `ext_id = stele:<message-id>`, so a retried delivery lands
+in the draft that already exists instead of writing a second one.
 
 ## The commands
 
@@ -57,14 +57,23 @@ GET  /messages?unread=1&limit=50 -> {"messages":[…]}
 POST /messages/{id}/ack     -> 204
 ```
 
+### Who sent it
+
 Auth is one opaque token per mailbox in `Authorization: Bearer <token>`,
-stored only as its SHA-256 in SQLite. The token decides the sender; the JSON
-body has no `from` field to forge. There are no accounts, no OAuth and no
-registration: `stele token add` prints 32 random bytes as hex once, and
-`token rotate` replaces it.
+stored only as its SHA-256 in SQLite. The token decides the sender: the JSON
+body has no `from` field, and a body that carries one — or `from_agent`, or any
+other spelling — is ignored when the request is deserialized, because the type
+has nowhere to put it. Accepting a claimed name and rejecting the request are
+both defensible; silently honouring it is not, and this does not.
 
 The recipient comes from the token too, not from a query parameter: `GET
-/messages` can only read the caller's own mail.
+/messages` reads only the caller's own inbox, whatever `to` says. One token maps
+to one name — `mailboxes.name` is the primary key and `token_hash` is unique, so
+`token add` refuses a name that already exists and two tokens cannot share one.
+Rotating a token keeps the name; a name is only freed by removing its mailbox.
+
+There are no accounts, no OAuth and no registration: `stele token add` prints 32
+random bytes as hex once, and `token rotate` replaces it.
 
 `POST /messages` takes a `client_id` chosen by the sender. `(from, client_id)`
 is unique, so retrying a send after a timeout returns the original id instead
@@ -89,15 +98,28 @@ Limits, enforced on the server:
 - 200 pending (unacknowledged) messages per recipient; a further send gets
   `429` instead of filling the disk.
 
+Expiry does not depend on `pull`. Every request that writes or reads messages
+sweeps expired rows, and the pending count in the cap already ignores rows
+past `expires_at`. A recipient whose machine is off cannot fill the queue with
+stale mail or make the server reject what somebody just sent; at worst the
+expired rows sit on disk until the next request touches the database.
+
 `delivered_at` is written when the receiver **acknowledges**, not when the
 server hands the message over. The client acknowledges only after `mem` exits
 zero. The alternative — marking on hand-over — silently loses a message when
 the response is cut, which is the wrong failure for a mailbox whose whole
 point is not losing the note.
 
-Delivery is therefore at-least-once. A crash between `mem save` and the ack
-leaves a duplicate draft, which `mem forget` removes. The `--ext-id` patch
-above is what would close that window.
+Delivery is exactly-once as long as the receiving `mem` is anathem 0.10 or
+newer: `pull` passes `--ext-id stele:<message id>`, the server's random and
+stable id, and a retry after a lost acknowledgement writes nothing because
+anathem already holds that identifier. The first attempt's draft is the one
+somebody accepts.
+
+`--ext-id` is required, not best-effort. An older `mem` rejects the flag,
+`pull` exits without acknowledging and the message stays in the mailbox.
+Falling back to a save without the key would reintroduce the duplicate this
+exists to prevent; a clear failure beats a silent regression.
 
 ## Resource targets
 
@@ -147,6 +169,10 @@ that led here, with the size each crate adds to a stripped binary, is in
   removes an unmaintained dependency from a security-sensitive path.
 - **An acknowledgement endpoint.** Marking on hand-over loses messages; see
   Storage.
+- **`--ext-id` from anathem 0.10.** The proposal left delivery at-least-once
+  and the flag as an open question; anathem shipped it, and `pull` uses it, so
+  a retried delivery is one draft. The mailbox now requires anathem 0.10 rather
+  than saving without the key.
 - **No HTTP client crate.** `ureq` without TLS still adds 343 KB; the client
   is the same `httparse` code pointed at a response.
 - **No `chrono`.** Formatting a UTC timestamp and keeping epoch seconds is
@@ -184,21 +210,18 @@ that led here, with the size each crate adds to a stripped binary, is in
   --accept` does not exist on purpose.
 - **Tokens are compared as hashes** and live in one file per client, `0600`.
   A config that others can read is reported when it is loaded.
+- **Provenance is structural, not decorative.** The sender is the mailbox the
+  token belongs to; a body cannot claim another one, and an inbox is read with
+  its own token. Without that, the `[from: …]` a person sees when deciding
+  whether to accept a draft would be a label anyone could write.
 
 ## Open questions
 
-- **`--ext-id` in anathem.** About 20 lines and a test: a `save --external`
-  flag that writes `ext_id`, whose unique index already exists. It would make
-  `pull` idempotent instead of at-least-once. Worth doing before anyone runs
-  the timer every minute. Tracked in
-  [anathem#59](https://gitlab.com/__alexander__/anathem/-/issues/59).
 - **A count in the MCP greeting.** "3 messages waiting; `mem recent
   --all --external`" is ~20 lines in anathem and would save the agent from
   discovering the queue by accident. It spends tokens in every session, so it
   should be measured before it is added. Tracked in
-  [anathem#60](https://gitlab.com/__alexander__/anathem/-/issues/60), with the
-  empty-window hint as
-  [anathem#61](https://gitlab.com/__alexander__/anathem/-/issues/61).
+  [anathem#60](https://gitlab.com/__alexander__/anathem/-/issues/60).
 - **Where the pull runs.** A timer is enough because a person accepts the
   drafts anyway. A `SessionStart` hook would make it immediate, at the cost of
   one agent-specific integration per client.

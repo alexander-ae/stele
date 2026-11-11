@@ -397,6 +397,29 @@ mod tests {
     }
 
     #[test]
+    fn expired_messages_do_not_hold_a_place_in_the_queue() {
+        let (s, _d) = store();
+        for i in 0..api::MAX_PENDING {
+            add(
+                &s,
+                &format!("m{i}"),
+                "laptop",
+                "dell",
+                &format!("c{i}"),
+                "api",
+                "x",
+                1000,
+            );
+        }
+        // Nothing has purged yet; the cap has to count only what is still
+        // alive, or a recipient who stopped pulling would reject new mail.
+        let later = 1000 + api::TTL_SECS;
+        let outcome = add(&s, "later", "laptop", "dell", "clater", "api", "x", later);
+        assert!(matches!(outcome, InsertOutcome::New(_)));
+        assert_eq!(s.purge(later).unwrap(), api::MAX_PENDING as usize);
+    }
+
+    #[test]
     fn removing_a_mailbox_removes_its_mail() {
         let (s, _d) = store();
         add(&s, "m1", "laptop", "dell", "c1", "api", "hello", 1000);
