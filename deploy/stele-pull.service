@@ -1,0 +1,14 @@
+[Unit]
+Description=stele pull: turn unread messages into anathem drafts
+Documentation=https://gitlab.com/__alexander__/stele
+After=network-online.target tailscaled.service
+
+[Service]
+Type=oneshot
+# systemd's user manager does not read ~/.bashrc: without this, `mem` in
+# ~/.local/bin is not on PATH and pull fails with "cannot run mem".
+Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=%h/.local/bin/stele pull
+# The default client config is ~/.config/stele/config.json. If this machine
+# keeps it elsewhere, add:
+# Environment=STELE_CONFIG=%h/.config/stele/config.json
