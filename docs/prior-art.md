@@ -57,10 +57,10 @@ turns each message into an anathem draft and keeps the human gate.
 
 ## What is worth adding later
 
-Small and measured, in this order: a threat-model document, identifier
-validation, `status`, a content-free arrival notification, and an explicit
-`discard`/attempt counter for a message anathem keeps refusing. Each one is a
-separate issue; none of them adds a dependency.
+Small and measured. The threat-model document, identifier validation, `status`,
+`discard` and a content-free arrival notification are now in. They were the
+whole shortlist; each one is a separate issue and none of them adds a
+dependency.
 
 ## Sources
 

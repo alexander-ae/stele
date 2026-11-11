@@ -62,6 +62,10 @@ impl Api {
         self.json("GET", "/status", None)
     }
 
+    pub fn message(&self, id: &str) -> Result<Message> {
+        self.json("GET", &format!("/messages/{id}"), None)
+    }
+
     pub fn send(&self, request: &SendRequest) -> Result<SendResponse> {
         let body = serde_json::to_vec(request)?;
         // Only the transport is retried. Once the server answers, that answer
@@ -88,6 +92,16 @@ impl Api {
 
     pub fn ack(&self, id: &str) -> Result<()> {
         let (status, raw) = self.call("POST", &format!("/messages/{id}/ack"), Some(b""))?;
+        if !(200..300).contains(&status) {
+            bail!(describe_error(status, &raw));
+        }
+        Ok(())
+    }
+
+    /// Mark a message as delivered without writing a draft. Idempotent, like
+    /// `ack`; the server keeps the row until its TTL.
+    pub fn discard(&self, id: &str) -> Result<()> {
+        let (status, raw) = self.call("POST", &format!("/messages/{id}/discard"), Some(b""))?;
         if !(200..300).contains(&status) {
             bail!(describe_error(status, &raw));
         }

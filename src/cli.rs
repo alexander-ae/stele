@@ -10,7 +10,7 @@ use crate::time;
 use crate::util::{random_hex, sha256_hex};
 use anyhow::{bail, Context, Result};
 use lexopt::prelude::*;
-use std::io::Read;
+use std::io::{Read, Write};
 use std::path::PathBuf;
 
 pub fn run() -> Result<()> {
@@ -52,6 +52,7 @@ pub fn run() -> Result<()> {
         "status" => status(&mut parser, config_path),
         "send" => send(&mut parser, config_path),
         "pull" => pull_command(&mut parser, config_path),
+        "discard" => discard(&mut parser, config_path),
         other => bail!("unknown command {other:?}; run `stele --help`"),
     }
 }
@@ -68,6 +69,7 @@ usage:
   stele [--config PATH] status
   stele [--config PATH] send --to MAILBOX --project PROJECT [BODY|-]
   stele [--config PATH] pull [--dry-run] [--limit N] [--mem PATH] [--mem-db PATH]
+  stele [--config PATH] discard [--yes] ID
   stele [--db PATH] serve [--bind ADDR] [--verbose]
   stele [--db PATH] token add|rotate|list|remove [MAILBOX]
 
@@ -78,6 +80,7 @@ Commands:
   status   server, mailbox and how many messages are waiting
   send     queues one message; the body may come from stdin (`-`)
   pull     fetches unread messages and writes each as an anathem draft
+  discard  acknowledges one message without writing a draft (asks first)
   serve    runs the mailbox; it listens on plain HTTP and is meant for a private network
   token    creates, rotates, lists or removes the server's mailboxes
 
@@ -303,6 +306,8 @@ fn pull_command(parser: &mut lexopt::Parser, config_path: Option<PathBuf>) -> Re
         );
     }
     let config = load_config(config_path)?;
+    let mailbox = config.mailbox.clone();
+    let notify_cmd = config.notify_cmd.clone();
     let api = Api::new(&config.url, config.token)?;
     let options = pull::Options {
         dry_run,
@@ -311,10 +316,60 @@ fn pull_command(parser: &mut lexopt::Parser, config_path: Option<PathBuf>) -> Re
         mem_db: mem_db.or(config.mem_db),
     };
     let count = pull::run(&api, &options)?;
-    if count == 0 && !dry_run {
-        // Quiet on purpose: a timer that runs every five minutes should not
-        // write a line saying that nothing happened.
+    if !dry_run && count > 0 {
+        if let Some(command) = notify_cmd.as_deref() {
+            if let Err(error) = pull::notify(command, &mailbox, count) {
+                // The drafts are already saved and acknowledged; a broken
+                // notifier is not a delivery failure.
+                eprintln!("stele: notification failed: {error:#}");
+            }
+        }
     }
+    Ok(())
+}
+
+fn discard(parser: &mut lexopt::Parser, config_path: Option<PathBuf>) -> Result<()> {
+    let mut yes = false;
+    let mut id = None;
+    while let Some(arg) = parser.next()? {
+        match arg {
+            Short('y') | Long("yes") => yes = true,
+            Value(value) => {
+                if id.is_some() {
+                    bail!("only one message id");
+                }
+                id = Some(value.string()?);
+            }
+            _ => return Err(arg.unexpected().into()),
+        }
+    }
+    let id = id.context("`stele discard` needs a message id")?;
+
+    let config = load_config(config_path)?;
+    let api = Api::new(&config.url, config.token)?;
+    let message = api.message(&id)?;
+    println!("from:     {}", message.from);
+    println!("project:  {}", message.project);
+    println!("created:  {}", time::iso8601(message.created));
+    for line in message.body.lines().take(3) {
+        println!("{}", line.chars().take(200).collect::<String>());
+    }
+
+    if !yes {
+        use std::io::IsTerminal;
+        if !std::io::stdin().is_terminal() {
+            bail!("pass --yes to discard without a prompt");
+        }
+        print!("discard message {id} without writing a draft? [y/N] ");
+        std::io::stdout().flush()?;
+        let mut answer = String::new();
+        std::io::stdin().read_line(&mut answer)?;
+        if !matches!(answer.trim().to_ascii_lowercase().as_str(), "y" | "yes") {
+            bail!("nothing discarded");
+        }
+    }
+    api.discard(&id)?;
+    println!("discarded {id}");
     Ok(())
 }
 
@@ -350,6 +405,9 @@ fn check_mailbox(name: &str) -> Result<()> {
     }
     if name.chars().any(|c| c.is_control()) {
         bail!("the mailbox name has control characters");
+    }
+    if let Some(c) = crate::api::first_invalid(name, crate::api::MAILBOX_CHARS) {
+        bail!("the mailbox name has {c:?}; use letters, digits and . _ - @");
     }
     Ok(())
 }

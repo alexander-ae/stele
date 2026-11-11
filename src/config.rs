@@ -18,6 +18,10 @@ pub struct ClientConfig {
     /// Optional: the anathem database `pull` should write into.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mem_db: Option<String>,
+    /// Optional shell command run after `pull` writes at least one draft. It
+    /// gets `STELE_DRAFTS` and `STELE_MAILBOX`, never the messages.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub notify_cmd: Option<String>,
 }
 
 impl ClientConfig {
@@ -28,6 +32,7 @@ impl ClientConfig {
             token,
             mem_bin: None,
             mem_db: None,
+            notify_cmd: None,
         }
     }
 }

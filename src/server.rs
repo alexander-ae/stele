@@ -160,8 +160,12 @@ fn route(store: &Store, request: &Request) -> Result<Reply> {
 
         ("POST", "/messages") => send(store, request),
         ("GET", "/messages") => inbox(store, request, now),
+        ("GET", p) if p.starts_with("/messages/") => message_detail(store, request, now),
         ("POST", p) if p.starts_with("/messages/") && p.ends_with("/ack") => {
             acknowledge(store, request, now)
+        }
+        ("POST", p) if p.starts_with("/messages/") && p.ends_with("/discard") => {
+            discard(store, request, now)
         }
 
         (_, "/messages") | (_, "/me") | (_, "/peers") | (_, "/status") => {
@@ -191,6 +195,24 @@ fn send(store: &Store, request: &Request) -> Result<Reply> {
     }
     if let Err(why) = check_field(&client_id, api::MAX_CLIENT_ID, "client_id") {
         return Ok(Reply::error(400, why));
+    }
+    if let Some(c) = api::first_invalid(&to, api::MAILBOX_CHARS) {
+        return Ok(Reply::error(
+            400,
+            format!("to has {c:?}; use letters, digits and . _ - @"),
+        ));
+    }
+    if let Some(c) = api::first_invalid(&project, api::PROJECT_CHARS) {
+        return Ok(Reply::error(
+            400,
+            format!("project has {c:?}; use letters, digits and . _ - @ /"),
+        ));
+    }
+    if let Some(c) = api::first_invalid(&client_id, api::CLIENT_ID_CHARS) {
+        return Ok(Reply::error(
+            400,
+            format!("client_id has {c:?}; use letters, digits and . _ : @ -"),
+        ));
     }
     if payload.body.trim().is_empty() {
         return Ok(Reply::error(400, "the body is empty"));
@@ -263,6 +285,44 @@ fn acknowledge(store: &Store, request: &Request, now: i64) -> Result<Reply> {
         .path
         .trim_start_matches("/messages/")
         .trim_end_matches("/ack")
+        .trim_end_matches('/');
+    if id.is_empty() || id.len() > 64 || id.contains('/') {
+        return Ok(Reply::error(400, "bad message id"));
+    }
+    if !store.ack(&mailbox, id, now)? {
+        return Ok(Reply::error(404, "no such message for this mailbox"));
+    }
+    Ok(Reply::empty(204))
+}
+
+fn message_detail(store: &Store, request: &Request, now: i64) -> Result<Reply> {
+    let Some(mailbox) = authenticated(store, request)? else {
+        return Ok(unauthorized());
+    };
+    let id = request.path.trim_start_matches("/messages/");
+    if id.is_empty() || id.len() > 64 || id.contains('/') {
+        return Ok(Reply::error(400, "bad message id"));
+    }
+    match store.message(&mailbox, id, now)? {
+        Some(message) => Ok(Reply::json(200, &message)),
+        None => Ok(Reply::error(
+            404,
+            "no pending message with that id for this mailbox",
+        )),
+    }
+}
+
+/// A deliberate loss: acknowledge one message without writing a draft. The
+/// row stays until its TTL, so the queue keeps the record of what was thrown
+/// away; only the recipient's token can do it.
+fn discard(store: &Store, request: &Request, now: i64) -> Result<Reply> {
+    let Some(mailbox) = authenticated(store, request)? else {
+        return Ok(unauthorized());
+    };
+    let id = request
+        .path
+        .trim_start_matches("/messages/")
+        .trim_end_matches("/discard")
         .trim_end_matches('/');
     if id.is_empty() || id.len() > 64 || id.contains('/') {
         return Ok(Reply::error(400, "bad message id"));

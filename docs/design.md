@@ -34,6 +34,8 @@ in the draft that already exists instead of writing a second one.
 | `stele serve` | the always-on machine | stores and serves messages |
 | `stele token add\|rotate\|list\|remove` | the mailbox operator, on the server | manages tokens, on the server's SQLite file |
 | `stele login` / `whoami` / `peers` / `status` | each client | writes or checks the client config, lists mailboxes, or reports how many messages are waiting |
+| `stele pull` (`notify_cmd`) | each client, if configured | runs a local command with a draft count and the mailbox, never a message |
+| `stele discard <id>` | the recipient, from its shell | acknowledges one message without writing a draft; asks first |
 
 No MCP server. A second MCP server per agent would add tools to every prompt
 for something the shell already does, and it would put `stele` between the
@@ -60,7 +62,9 @@ GET  /peers                 -> {"mailboxes":["dell","laptop"]}
 GET  /status                -> {"mailbox":"dell","pending":3}
 POST /messages              -> {"id":"…","duplicate":false}  201, or 200 on a retry
 GET  /messages?unread=1&limit=50 -> {"messages":[…]}
+GET  /messages/{id}         -> one pending message
 POST /messages/{id}/ack     -> 204
+POST /messages/{id}/discard -> 204, acknowledged without a draft
 ```
 
 ### Who sent it
@@ -77,6 +81,12 @@ The recipient comes from the token too, not from a query parameter: `GET
 to one name — `mailboxes.name` is the primary key and `token_hash` is unique, so
 `token add` refuses a name that already exists and two tokens cannot share one.
 Rotating a token keeps the name; a name is only freed by removing its mailbox.
+
+Names are a narrow charset on purpose: mailbox names allow letters, digits and
+`. _ - @`; project names add `/`; `client_id` adds `:`. These strings travel
+into logs, headers, CLI arguments and anathem's `--from` label, and a composite
+key assembled from unescaped parts is a known source of scope confusion. A
+value outside the charset is a `400`, never silently rewritten.
 
 There are no accounts, no OAuth and no registration: `stele token add` prints 32
 random bytes as hex once, and `token rotate` replaces it.
@@ -168,7 +178,7 @@ running. Measured on the Dell (Ubuntu 26.04, 4 cores), release build with
 
 | | target | measured |
 |---|---|---|
-| binary | 2.5–3 MB | 2.78 MB |
+| binary | 2.5–3 MB | 2.81 MB |
 | RSS, idle | ~6 MB | 5.7 MB, one thread |
 | CPU, idle | 0% | 0 ticks over 10 s |
 | local latency | < 1 ms | send p50 0.24 ms, p99 0.82 ms; ack p50 0.15 ms |

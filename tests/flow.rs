@@ -596,3 +596,232 @@ fn status_shows_the_mailbox_and_pending() {
     assert!(laptop_status.contains("mailbox: laptop"), "{laptop_status}");
     assert!(laptop_status.contains("pending: 1"), "{laptop_status}");
 }
+
+#[test]
+fn identifiers_outside_the_charset_are_refused() {
+    let dir = tempdir();
+    let db = dir.path().join("stele.db");
+    let dell_token = token(&db, "dell");
+    let server = start(&db);
+    let _dell = login(&server, dir.path(), "dell", &dell_token);
+    let endpoint = Endpoint::parse(&server.url).unwrap();
+
+    let post = |body: serde_json::Value| {
+        call(
+            &endpoint,
+            "POST",
+            "/messages",
+            Some(&dell_token),
+            Some(&serde_json::to_vec(&body).unwrap()),
+        )
+        .unwrap()
+    };
+
+    for (field, value) in [("project", "api&x"), ("to", "dell x"), ("client_id", "a b")] {
+        let mut body = serde_json::json!({
+            "client_id": "ok",
+            "to": "dell",
+            "project": "api",
+            "body": "x"
+        });
+        body[field] = serde_json::json!(value);
+        let (status, raw) = post(body);
+        assert_eq!(
+            status,
+            400,
+            "{field}={value:?} should be refused: {}",
+            String::from_utf8_lossy(&raw)
+        );
+    }
+
+    // Dots and @ are part of real names.
+    let valid = post(serde_json::json!({
+        "client_id": "ok-1",
+        "to": "dell",
+        "project": "kipin.pe",
+        "body": "x"
+    }));
+    assert_eq!(valid.0, 201, "{}", String::from_utf8_lossy(&valid.1));
+}
+
+#[test]
+fn a_mailbox_name_can_carry_a_dot_and_an_at() {
+    let dir = tempdir();
+    let db = dir.path().join("stele.db");
+    let token = token(&db, "claude-code@laptop");
+    let server = start(&db);
+    let config = login(&server, dir.path(), "claude-code@laptop", &token);
+    ok(send(&config, "claude-code@laptop", "kipin.pe", "hello"));
+    let status = ok(stele(
+        &["--config", config.config.to_str().unwrap(), "status"],
+        &[],
+    ));
+    assert!(status.contains("mailbox: claude-code@laptop"), "{status}");
+    assert!(status.contains("pending: 1"), "{status}");
+}
+
+#[test]
+fn token_add_refuses_a_mailbox_name_with_a_space() {
+    let dir = tempdir();
+    let db = dir.path().join("stele.db");
+    let refused = stele(
+        &["--db", db.to_str().unwrap(), "token", "add", "bad name"],
+        &[],
+    );
+    assert!(!refused.status.success());
+    assert!(String::from_utf8_lossy(&refused.stderr).contains("letters"));
+}
+
+#[test]
+fn discard_requires_yes_and_removes_only_that_message() {
+    let dir = tempdir();
+    let db = dir.path().join("stele.db");
+    let dell_token = token(&db, "dell");
+    let server = start(&db);
+    let dell = login(&server, dir.path(), "dell", &dell_token);
+
+    let keep = ok(send(&dell, "dell", "api", "keep me"));
+    let keep_id = keep.trim_start_matches("queued as ");
+    assert!(!keep_id.is_empty());
+    let drop = ok(send(&dell, "dell", "api", "discard me"));
+    let drop_id = drop.trim_start_matches("queued as ");
+
+    let refused = stele(
+        &[
+            "--config",
+            dell.config.to_str().unwrap(),
+            "discard",
+            drop_id,
+        ],
+        &[],
+    );
+    assert!(!refused.status.success());
+    assert!(String::from_utf8_lossy(&refused.stderr).contains("pass --yes"));
+
+    let status = ok(stele(
+        &["--config", dell.config.to_str().unwrap(), "status"],
+        &[],
+    ));
+    assert!(status.contains("pending: 2"), "{status}");
+
+    let done = ok(stele(
+        &[
+            "--config",
+            dell.config.to_str().unwrap(),
+            "discard",
+            "--yes",
+            drop_id,
+        ],
+        &[],
+    ));
+    assert!(done.contains("discarded"), "{done}");
+    let status = ok(stele(
+        &["--config", dell.config.to_str().unwrap(), "status"],
+        &[],
+    ));
+    assert!(status.contains("pending: 1"), "{status}");
+
+    let mem = fake_mem(dir.path());
+    let log = dir.path().join("mem.log");
+    ok(pull(&dell, &mem, &log, &[]));
+    let recorded = std::fs::read_to_string(&log).unwrap();
+    assert!(recorded.contains("keep me"), "{recorded}");
+    assert!(!recorded.contains("discard me"), "{recorded}");
+    assert_eq!(recorded.matches("ARGS").count(), 1);
+}
+
+#[test]
+fn another_mailbox_cannot_discard_a_message() {
+    let dir = tempdir();
+    let db = dir.path().join("stele.db");
+    let dell_token = token(&db, "dell");
+    let laptop_token = token(&db, "laptop");
+    let server = start(&db);
+    let dell = login(&server, dir.path(), "dell", &dell_token);
+    let laptop = login(&server, dir.path(), "laptop", &laptop_token);
+    let sent = ok(send(&dell, "dell", "api", "not the laptop's"));
+    let id = sent.trim_start_matches("queued as ");
+
+    let refused = stele(
+        &[
+            "--config",
+            laptop.config.to_str().unwrap(),
+            "discard",
+            "--yes",
+            id,
+        ],
+        &[],
+    );
+    assert!(!refused.status.success());
+    assert!(String::from_utf8_lossy(&refused.stderr).contains("404"));
+
+    let status = ok(stele(
+        &["--config", dell.config.to_str().unwrap(), "status"],
+        &[],
+    ));
+    assert!(status.contains("pending: 1"), "{status}");
+}
+
+fn notifier(dir: &Path) -> PathBuf {
+    let path = dir.join("notify");
+    let mut file = std::fs::File::create(&path).unwrap();
+    writeln!(file, "#!/bin/sh").unwrap();
+    writeln!(
+        file,
+        "printf '%s %s\\n' \"$STELE_DRAFTS\" \"$STELE_MAILBOX\" >> \"$(dirname \"$0\")/notify.log\""
+    )
+    .unwrap();
+    drop(file);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    path
+}
+
+fn set_notify(config: &Path, command: &str) {
+    let text = std::fs::read_to_string(config).unwrap();
+    let mut value: serde_json::Value = serde_json::from_str(&text).unwrap();
+    value["notify_cmd"] = serde_json::json!(command);
+    std::fs::write(config, serde_json::to_string_pretty(&value).unwrap()).unwrap();
+}
+
+#[test]
+fn a_notifier_runs_only_when_a_draft_is_written() {
+    let dir = tempdir();
+    let db = dir.path().join("stele.db");
+    let dell_token = token(&db, "dell");
+    let server = start(&db);
+    let dell = login(&server, dir.path(), "dell", &dell_token);
+    let notify = notifier(dir.path());
+    set_notify(&dell.config, notify.to_str().unwrap());
+    let notify_log = dir.path().join("notify.log");
+
+    let mem = fake_mem(dir.path());
+    let log = dir.path().join("mem.log");
+    ok(pull(&dell, &mem, &log, &[]));
+    assert!(!notify_log.exists(), "no drafts, no notification");
+
+    ok(send(&dell, "dell", "api", "one"));
+    ok(send(&dell, "dell", "api", "two"));
+    ok(pull(&dell, &mem, &log, &[]));
+    assert_eq!(
+        std::fs::read_to_string(&notify_log).unwrap(),
+        "2 dell\n",
+        "the notifier gets a count and the mailbox, nothing else"
+    );
+
+    // A message anathem refuses writes no draft, so it does not notify.
+    ok(send(&dell, "dell", "api", "POISON: refused"));
+    let failing = fake_mem_failing_on(dir.path(), "POISON");
+    let failed = pull(&dell, &failing, &log, &[]);
+    assert!(!failed.status.success());
+    assert_eq!(
+        std::fs::read_to_string(&notify_log)
+            .unwrap()
+            .lines()
+            .count(),
+        1
+    );
+}
