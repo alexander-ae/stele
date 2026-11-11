@@ -17,7 +17,8 @@ install -m 755 target/release/stele ~/.local/bin/stele
 stele --db ~/.local/share/stele/stele.db token add dell
 stele --db ~/.local/share/stele/stele.db token add laptop
 
-# edit the bind address in the unit first — it has to be the Tailscale IP
+# edit the bind address in the unit first — the interface you trust:
+# a Tailscale IP, a LAN IP, or 127.0.0.1 if the port is reached through a tunnel
 mkdir -p ~/.config/systemd/user
 cp deploy/stele-serve.service ~/.config/systemd/user/
 systemctl --user daemon-reload
@@ -26,7 +27,8 @@ systemctl --user status stele-serve
 ```
 
 The unit prints `listening on http://<address>` on start. Check it from
-another machine on the tailnet:
+another machine that can reach the port (on the tailnet, a LAN, or through an
+SSH tunnel):
 
 ```bash
 curl -s http://<tailscale-ip>:3900/health   # {"ok":true}

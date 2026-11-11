@@ -36,10 +36,17 @@ model and the memory, which is where `mem` belongs.
 
 ## Transport
 
-HTTPS is not implemented in the binary. It speaks plain HTTP/1.1, one request
-per connection, and is meant to listen on the Tailscale address: the tailnet
-already encrypts the link. TLS, if it is ever needed beyond the tailnet, is
-nginx's job.
+stele is not tied to Tailscale or to any particular network. It speaks plain
+HTTP/1.1, one request per connection, to whatever address it is given: a
+tailnet, a WireGuard or other VPN, a LAN, or an SSH tunnel
+(`ssh -N -L 3900:127.0.0.1:3900 <host>`).
+
+TLS is not implemented in the binary, and `https://` is refused on purpose: a
+TLS stack would be most of the dependency budget for a mailbox that moves tens
+of messages a day. On a network that does not already encrypt the link, wrap
+the port in something that does; do not expose it in the clear. If direct
+public HTTPS is ever needed, it is a separate decision with its own cost, not
+a flag to switch on.
 
 ```
 GET  /health                -> {"ok":true}                  no token
@@ -150,7 +157,7 @@ that led here, with the size each crate adds to a stripped binary, is in
   slow reader is protected from a fast sender.
 - **The server is single-threaded.** At tens of messages a day a worker pool
   only adds state; a slow client can hold the loop for the 10 s read timeout,
-  which is bounded and only reachable from the tailnet.
+  which is bounded and only reachable from the network the port is bound to.
 
 ## What it deliberately does not do
 

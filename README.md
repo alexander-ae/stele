@@ -44,18 +44,36 @@ stele --db ~/.local/share/stele/stele.db serve --bind <tailscale-ip>:3900
 ```
 
 Each `token add` prints the token **once**, on stdout, and how to use it on
-stderr. The server listens on plain HTTP: put it on the tailnet, where
-WireGuard already encrypts the connection, and do not expose it anywhere else.
+stderr. The server listens on plain HTTP; bind it to the interface you trust —
+a tailnet address, a VPN address, a LAN address, or `127.0.0.1` behind a
+tunnel — and do not expose the port to a network you do not control.
 
 On every machine, once:
 
 ```bash
-stele login --url http://<tailscale-ip>:3900 --token -
+stele login --url http://<mailbox-address>:3900 --token -
 # paste the token, then Ctrl-D
 stele whoami
 ```
 
 The config lives in `~/.config/stele/config.json`, mode `0600`.
+
+## Transport
+
+stele does not know about Tailscale. It opens a TCP connection to
+`http://host:port` and speaks HTTP/1.1; the tailnet is just the address and the
+encryption this README happens to use. Any route that reaches the port works:
+
+- a tailnet, a WireGuard or other VPN, or a home/lab LAN;
+- an SSH tunnel, when the machines have SSH but no shared network:
+  `ssh -N -L 3900:127.0.0.1:3900 dell`, then `--url http://127.0.0.1:3900`;
+- any other TCP path, if you accept that the traffic is plaintext.
+
+What it does **not** do is TLS. It rejects `https://` on purpose: a TLS stack
+would be most of the dependency budget and the binary, for a mailbox that moves
+tens of messages a day. On a network you do not control, wrap it (tailnet, VPN,
+SSH) instead of exposing the port; on a public address the bearer token and the
+message bodies would travel in the clear.
 
 ## Use it
 
@@ -114,7 +132,8 @@ what routes the note to the right work.
   and the MCP greeting.
 - **Is not useful alone.** Without `mem` on the receiving side, nothing
   archives what arrives.
-- **Does not do TLS.** Terminate it in nginx, or stay on the tailnet.
+- **Does not do TLS.** Use a network that already encrypts (tailnet, VPN, SSH
+  tunnel), or put the mailbox behind one; the client refuses `https://`.
 - **Delivers at least once.** If `stele pull` dies between writing the draft
   and the acknowledgement, the message comes back and anathem gets a second
   draft; `mem forget <id>` removes it. A small `--ext-id` patch to anathem
