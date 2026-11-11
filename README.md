@@ -95,6 +95,7 @@ message bodies would travel in the clear.
 stele send --to dell --project api "The contract changed to v2"
 printf 'the whole note\n' | stele send --to dell --project api -
 stele peers
+stele status
 stele pull --dry-run
 stele pull
 mem recent --all --external
@@ -139,6 +140,12 @@ what routes the note to the right work.
 
 - [docs/design.md](docs/design.md) — transport, storage, why the draft rule
   decides everything else, and what changed from the proposal.
+- [docs/prior-art.md](docs/prior-art.md) — what already exists (AgentMail, ATP,
+  Supermemory, mem0, Letta, A2A), the recent papers, and what stele borrows.
+- [docs/security.md](docs/security.md) — assets, threats, and the limits of the
+  draft gate.
+- [docs/handoff.md](docs/handoff.md) — what a note the next agent can use
+  looks like.
 - [docs/benchmarks.md](docs/benchmarks.md) — measured binary size, RSS, idle
   CPU, latency, database growth, and the dependency comparison.
 - [deploy/](deploy/) — systemd user units for `serve` and for the pull timer.
