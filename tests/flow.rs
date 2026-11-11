@@ -598,7 +598,7 @@ fn status_shows_the_mailbox_and_pending() {
 }
 
 #[test]
-fn identifiers_outside_the_charset_are_refused() {
+fn identifiers_follow_the_rule_of_the_field() {
     let dir = tempdir();
     let db = dir.path().join("stele.db");
     let dell_token = token(&db, "dell");
@@ -617,7 +617,8 @@ fn identifiers_outside_the_charset_are_refused() {
         .unwrap()
     };
 
-    for (field, value) in [("project", "api&x"), ("to", "dell x"), ("client_id", "a b")] {
+    // Mailbox and client_id are identifiers with a narrow charset.
+    for (field, value) in [("to", "dell x"), ("client_id", "a b")] {
         let mut body = serde_json::json!({
             "client_id": "ok",
             "to": "dell",
@@ -634,7 +635,35 @@ fn identifiers_outside_the_charset_are_refused() {
         );
     }
 
-    // Dots and @ are part of real names.
+    // Project names follow anathem: free text without control characters.
+    for (i, project) in ["api & web", "cliente: acme", "ñandú", "org/repo"]
+        .iter()
+        .enumerate()
+    {
+        let body = serde_json::json!({
+            "client_id": format!("ok-project-{i}"),
+            "to": "dell",
+            "project": project,
+            "body": "x"
+        });
+        let (status, raw) = post(body);
+        assert_eq!(
+            status,
+            201,
+            "project {project:?} should be accepted: {}",
+            String::from_utf8_lossy(&raw)
+        );
+    }
+
+    let control = post(serde_json::json!({
+        "client_id": "bad-project",
+        "to": "dell",
+        "project": "api\nx",
+        "body": "x"
+    }));
+    assert_eq!(control.0, 400, "a control character is still refused");
+
+    // Dots and @ are part of real mailbox names.
     let valid = post(serde_json::json!({
         "client_id": "ok-1",
         "to": "dell",

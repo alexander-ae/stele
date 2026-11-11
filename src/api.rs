@@ -31,8 +31,6 @@ pub const MAX_CLIENT_ID: usize = 64;
 /// scope (mem0's CVE-2026-116575 is the recent example).
 pub const MAILBOX_CHARS: &str =
     "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._@-";
-pub const PROJECT_CHARS: &str =
-    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._@-/";
 pub const CLIENT_ID_CHARS: &str =
     "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._:@-";
 

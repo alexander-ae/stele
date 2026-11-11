@@ -202,12 +202,6 @@ fn send(store: &Store, request: &Request) -> Result<Reply> {
             format!("to has {c:?}; use letters, digits and . _ - @"),
         ));
     }
-    if let Some(c) = api::first_invalid(&project, api::PROJECT_CHARS) {
-        return Ok(Reply::error(
-            400,
-            format!("project has {c:?}; use letters, digits and . _ - @ /"),
-        ));
-    }
     if let Some(c) = api::first_invalid(&client_id, api::CLIENT_ID_CHARS) {
         return Ok(Reply::error(
             400,

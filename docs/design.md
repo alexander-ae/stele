@@ -82,11 +82,12 @@ to one name — `mailboxes.name` is the primary key and `token_hash` is unique, 
 `token add` refuses a name that already exists and two tokens cannot share one.
 Rotating a token keeps the name; a name is only freed by removing its mailbox.
 
-Names are a narrow charset on purpose: mailbox names allow letters, digits and
-`. _ - @`; project names add `/`; `client_id` adds `:`. These strings travel
-into logs, headers, CLI arguments and anathem's `--from` label, and a composite
-key assembled from unescaped parts is a known source of scope confusion. A
-value outside the charset is a `400`, never silently rewritten.
+Mailbox names and `client_id` are a narrow charset on purpose: letters, digits
+and `. _ - @` (plus `:` for the client id). They are the identity and the retry
+key, and they travel into anathem's `--from` label and the logs. Project names
+are not restricted the same way: anathem stores any non-empty string without
+control characters, so stele accepts the same and only passes it through. A
+value outside a charset is a `400`, never silently rewritten.
 
 There are no accounts, no OAuth and no registration: `stele token add` prints 32
 random bytes as hex once, and `token rotate` replaces it.
