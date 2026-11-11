@@ -5,6 +5,16 @@ use serde::{Deserialize, Serialize};
 /// A message body is capped so one agent in a loop cannot fill the disk.
 pub const MAX_BODY: usize = 32 * 1024;
 
+/// The HTTP request carries the body inside a JSON envelope, so the socket
+/// has to accept a little more than the message itself. Keeping them apart is
+/// what makes `MAX_BODY` a limit a caller can actually reach.
+pub const MAX_REQUEST: usize = 64 * 1024;
+
+/// One inbox read returns at most this many bytes of bodies. The client
+/// acknowledges what it receives, so a full mailbox drains in several pulls
+/// instead of producing a response the client refuses to read.
+pub const MAX_INBOX_BYTES: usize = 1024 * 1024;
+
 /// Pending (unacknowledged) messages per recipient.
 pub const MAX_PENDING: i64 = 200;
 

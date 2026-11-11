@@ -26,6 +26,9 @@ pub fn run(api: &Api, options: &Options) -> Result<usize> {
     if messages.is_empty() {
         return Ok(0);
     }
+    let mut delivered = 0;
+    let mut failed = 0;
+    let mut shown = 0;
     for message in &messages {
         if options.dry_run {
             println!(
@@ -38,13 +41,37 @@ pub fn run(api: &Api, options: &Options) -> Result<usize> {
             );
             continue;
         }
-        save_draft(api, message, options)?;
-        println!(
-            "draft {} from {} ({})",
-            message.id, message.from, message.project
+        match save_draft(api, message, options) {
+            Ok(()) => {
+                delivered += 1;
+                println!(
+                    "draft {} from {} ({})",
+                    message.id, message.from, message.project
+                );
+            }
+            // One note anathem refuses must not hold the queue behind it.
+            // The failed message stays unread and is retried next time; the
+            // rest are delivered and acknowledged now.
+            Err(error) => {
+                failed += 1;
+                if shown < 5 {
+                    eprintln!("stele: {error:#}");
+                    shown += 1;
+                }
+            }
+        }
+    }
+    if failed > 0 {
+        bail!(
+            "{failed} of {} messages could not be delivered; they stay unread",
+            messages.len()
         );
     }
-    Ok(messages.len())
+    Ok(if options.dry_run {
+        messages.len()
+    } else {
+        delivered
+    })
 }
 
 fn save_draft(api: &Api, message: &Message, options: &Options) -> Result<()> {

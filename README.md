@@ -103,6 +103,10 @@ command, never their content), so the agent knows to look. `mem show 42` reads
 one; `mem accept 42` lets it into search. Accepted messages keep
 `[from: laptop]` wherever they appear.
 
+A dropped connection during `send` is retried with the same message id, so the
+retry does not duplicate. A note that anathem refuses does not stop the batch:
+it stays unread and is reported, and the next pull retries only that one.
+
 ## How the other agents use it
 
 Any agent with a shell — opencode, Claude Code, Codex, Cursor — uses it with

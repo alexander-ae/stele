@@ -197,7 +197,13 @@ impl Store {
         Ok(InsertOutcome::New(id.to_string()))
     }
 
-    pub fn unread(&self, to: &str, limit: i64, now: i64) -> Result<Vec<Message>> {
+    /// The next messages for an inbox, in arrival order, stopping at a byte
+    /// budget so one pull cannot ask for more than the client will read.
+    ///
+    /// The budget counts the body plus a rough envelope; the first message is
+    /// always included, even if it alone is over the budget, so a batch can
+    /// never be empty and a single large note cannot block delivery forever.
+    pub fn unread(&self, to: &str, limit: i64, now: i64, max_bytes: usize) -> Result<Vec<Message>> {
         let mut st = self.conn.prepare(
             "select id, from_box, project, body, created_at
                from messages
@@ -205,16 +211,28 @@ impl Store {
               order by created_at, id
               limit ?3",
         )?;
-        let rows = st.query_map(params![to, now, limit], |r| {
-            Ok(Message {
-                id: r.get(0)?,
-                from: r.get(1)?,
-                project: r.get(2)?,
-                body: r.get(3)?,
-                created: r.get(4)?,
-            })
-        })?;
-        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+        let mut rows = st.query(params![to, now, limit])?;
+        let mut out = Vec::new();
+        let mut used = 0usize;
+        while let Some(row) = rows.next()? {
+            let body: String = row.get(3)?;
+            // The budget is the size the client will actually read, so it has
+            // to count what JSON escaping adds: a control character becomes
+            // six bytes, a quote or a backslash two.
+            let cost = json_escaped_len(&body) + 256;
+            if !out.is_empty() && used + cost > max_bytes {
+                break;
+            }
+            used += cost;
+            out.push(Message {
+                id: row.get(0)?,
+                from: row.get(1)?,
+                project: row.get(2)?,
+                body,
+                created: row.get(4)?,
+            });
+        }
+        Ok(out)
     }
 
     /// Mark a message as handed over. Idempotent: a second ack for the same
@@ -251,6 +269,20 @@ impl Store {
             .conn
             .query_row("select count(*) from messages", [], |r| r.get(0))?)
     }
+}
+
+/// The size a string takes inside a JSON document, before the envelope.
+/// `serde_json` leaves non-ASCII characters alone, doubles quotes and
+/// backslashes, and writes control characters as `\u00XX`.
+fn json_escaped_len(value: &str) -> usize {
+    value
+        .chars()
+        .map(|c| match c {
+            '"' | '\\' => 2,
+            c if (c as u32) < 0x20 => 6,
+            c => c.len_utf8(),
+        })
+        .sum()
 }
 
 /// The mailbox holds message bodies in the clear: keep the file, and the
@@ -328,11 +360,11 @@ mod tests {
             panic!("expected a new message");
         };
         assert_eq!(id, "m1");
-        let got = s.unread("dell", 50, 1000).unwrap();
+        let got = s.unread("dell", 50, 1000, usize::MAX).unwrap();
         assert_eq!(got.len(), 1);
         assert_eq!(got[0].from, "laptop");
         assert!(s.ack("dell", "m1", 1001).unwrap());
-        assert!(s.unread("dell", 50, 1001).unwrap().is_empty());
+        assert!(s.unread("dell", 50, 1001, usize::MAX).unwrap().is_empty());
         assert!(s.ack("dell", "m1", 1002).unwrap(), "ack is idempotent");
         assert!(!s.ack("dell", "missing", 1002).unwrap());
         assert!(!s.ack("laptop", "m1", 1002).unwrap(), "not the recipient");
@@ -377,7 +409,7 @@ mod tests {
         let start = 1000;
         add(&s, "m1", "laptop", "dell", "c1", "api", "hello", start);
         assert!(s
-            .unread("dell", 50, start + api::TTL_SECS)
+            .unread("dell", 50, start + api::TTL_SECS, usize::MAX)
             .unwrap()
             .is_empty());
         add(
@@ -391,7 +423,9 @@ mod tests {
             start + api::TTL_SECS,
         );
         assert_eq!(s.purge(start + api::TTL_SECS).unwrap(), 1);
-        let left = s.unread("dell", 50, start + api::TTL_SECS).unwrap();
+        let left = s
+            .unread("dell", 50, start + api::TTL_SECS, usize::MAX)
+            .unwrap();
         assert_eq!(left.len(), 1);
         assert_eq!(left[0].id, "m2");
     }
@@ -417,6 +451,54 @@ mod tests {
         let outcome = add(&s, "later", "laptop", "dell", "clater", "api", "x", later);
         assert!(matches!(outcome, InsertOutcome::New(_)));
         assert_eq!(s.purge(later).unwrap(), api::MAX_PENDING as usize);
+    }
+
+    #[test]
+    fn the_batch_stops_at_the_byte_budget() {
+        let (s, _d) = store();
+        let body = "x".repeat(1000);
+        for i in 0..3 {
+            add(
+                &s,
+                &format!("m{i}"),
+                "laptop",
+                "dell",
+                &format!("c{i}"),
+                "api",
+                &body,
+                1000,
+            );
+        }
+        // Each message costs its body plus a 256-byte envelope.
+        assert_eq!(s.unread("dell", 50, 1000, 1300).unwrap().len(), 1);
+        assert_eq!(s.unread("dell", 50, 1000, 2600).unwrap().len(), 2);
+        assert_eq!(
+            s.unread("dell", 50, 1000, 1).unwrap().len(),
+            1,
+            "a batch always makes progress"
+        );
+    }
+
+    #[test]
+    fn the_batch_counts_json_escaping() {
+        let (s, _d) = store();
+        // 1000 control characters are 6000 bytes once serde_json writes them
+        // as \u0001, so a budget in raw bytes would overfill the response.
+        let body = "\u{1}".repeat(1000);
+        for i in 0..2 {
+            add(
+                &s,
+                &format!("m{i}"),
+                "laptop",
+                "dell",
+                &format!("c{i}"),
+                "api",
+                &body,
+                1000,
+            );
+        }
+        assert_eq!(s.unread("dell", 50, 1000, 7000).unwrap().len(), 1);
+        assert_eq!(s.unread("dell", 50, 1000, 13000).unwrap().len(), 2);
     }
 
     #[test]
