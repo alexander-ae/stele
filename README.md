@@ -40,6 +40,13 @@ stops before acknowledging rather than saving a duplicate. anathem 1.0 also
 announces waiting drafts in the MCP greeting, which is what keeps the mailbox
 from going unnoticed.
 
+## Checks
+
+```bash
+make check   # fmt, clippy and tests
+make build   # the release binary
+```
+
 ## Set it up
 
 On the machine that is always on — the mailbox:
