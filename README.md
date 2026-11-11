@@ -30,6 +30,10 @@ cargo build --release
 install -m 755 target/release/stele ~/.local/bin/stele
 ```
 
+The full guide — requirements, server and client setup, every config key,
+limits, upgrades and troubleshooting — is
+[`docs/installation.md`](docs/installation.md).
+
 The binary is about 2.8 MB, stripped. `rusqlite` compiles SQLite in, so there
 is no `libsqlite3-dev` to install and nothing to match against the system.
 
@@ -150,6 +154,8 @@ what routes the note to the right work.
 
 - [docs/design.md](docs/design.md) — transport, storage, why the draft rule
   decides everything else, and what changed from the proposal.
+- [docs/installation.md](docs/installation.md) — build, mailbox, clients,
+  every config key, limits and troubleshooting.
 - [docs/prior-art.md](docs/prior-art.md) — what already exists (AgentMail, ATP,
   Supermemory, mem0, Letta, A2A), the recent papers, and what stele borrows.
 - [docs/security.md](docs/security.md) — assets, threats, and the limits of the
