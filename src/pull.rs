@@ -143,6 +143,26 @@ fn old_mem(stderr: &[u8]) -> bool {
     text.contains("--ext-id") && (text.contains("unexpected") || text.contains("unrecognized"))
 }
 
+/// Runs the optional notifier. The command is the operator's, and the only
+/// things it receives are a count and the mailbox: a received note cannot
+/// write itself into a command line.
+pub fn notify(command: &str, mailbox: &str, drafts: usize) -> Result<()> {
+    let status = Command::new("sh")
+        .arg("-c")
+        .arg(command)
+        .env("STELE_DRAFTS", drafts.to_string())
+        .env("STELE_MAILBOX", mailbox)
+        .stdin(Stdio::null())
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit())
+        .status()
+        .with_context(|| format!("cannot run notify_cmd {command:?}"))?;
+    if !status.success() {
+        bail!("notify_cmd exited with {status}");
+    }
+    Ok(())
+}
+
 fn first_line(body: &str) -> String {
     body.lines()
         .next()

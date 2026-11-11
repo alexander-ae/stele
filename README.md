@@ -30,7 +30,7 @@ cargo build --release
 install -m 755 target/release/stele ~/.local/bin/stele
 ```
 
-The binary is about 2.7 MB, stripped. `rusqlite` compiles SQLite in, so there
+The binary is about 2.8 MB, stripped. `rusqlite` compiles SQLite in, so there
 is no `libsqlite3-dev` to install and nothing to match against the system.
 
 The receiving side needs **anathem 0.10 or newer**: `stele pull` hands each
@@ -99,9 +99,18 @@ stele peers
 stele status
 stele pull --dry-run
 stele pull
+stele discard --yes 42
 mem recent --all --external
 mem accept 42
 ```
+
+`discard` acknowledges one message **without writing a draft**; it asks first
+unless `--yes`. Use it only for a note anathem keeps refusing: the row stays
+until its TTL, but the note is gone.
+
+`pull` can also notify a person through `notify_cmd` in the client config; it
+sees a count and the mailbox, never a message. See
+[`deploy/README.md`](deploy/README.md#notifying-a-person).
 
 `mem recent` defaults to the project derived from the directory you are
 standing in, and a message may have been filed under another one. `--all`

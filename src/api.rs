@@ -25,6 +25,21 @@ pub const MAX_PROJECT: usize = 64;
 pub const MAX_MAILBOX: usize = 64;
 pub const MAX_CLIENT_ID: usize = 64;
 
+/// Characters allowed in names. Deliberately narrow: these strings travel
+/// into logs, headers, CLI arguments and anathem's `--from` label, and a
+/// composite key assembled from unescaped parts is a known way to confuse a
+/// scope (mem0's CVE-2026-116575 is the recent example).
+pub const MAILBOX_CHARS: &str =
+    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._@-";
+pub const PROJECT_CHARS: &str =
+    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._@-/";
+pub const CLIENT_ID_CHARS: &str =
+    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._:@-";
+
+pub fn first_invalid(value: &str, allowed: &str) -> Option<char> {
+    value.chars().find(|c| !allowed.contains(*c))
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Message {
     pub id: String,

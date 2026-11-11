@@ -72,6 +72,23 @@ directory you are in, and the note may be filed under another one.
 which is where the installer puts it. If yours lives somewhere else, set
 `mem_bin` in `~/.config/stele/config.json`.
 
+## Notifying a person
+
+`pull` can run a command after it writes at least one draft. It is off when
+`notify_cmd` is absent. Add the key to the existing client config, next to
+`url`, `mailbox` and `token`:
+
+```json
+{
+  "notify_cmd": "curl -s -d \"$STELE_DRAFTS draft(s) in $STELE_MAILBOX\" https://ntfy.sh/my-topic"
+}
+```
+
+The command gets `STELE_DRAFTS` and `STELE_MAILBOX`, never a body, a sender or
+an id. It runs through `sh -c`; if it fails, `pull` reports the failure and
+still exits 0, because the drafts are already saved and acknowledged. Treat the
+config as code: it runs with your user.
+
 ## Moving or rotating
 
 ```bash

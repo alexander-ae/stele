@@ -99,6 +99,12 @@ Consequences for operation:
   anathem separately.
 - Watch the drafts: `mem recent --all --external`, or anathem 1.0's greeting
   count. A mailbox nobody empties is the failure mode this design has.
+- `notify_cmd`, if set, is a shell command from the client config. It runs
+  with your user and sees only a count and the mailbox; treat the config as
+  code.
+- Discard only what you have read. `stele discard <id> --yes` acknowledges one
+  message without writing a draft; the row stays until TTL, but the note is
+  gone.
 - For real approval isolation, run `mem accept` outside the agent's user.
 
 ## What stele deliberately does not do

@@ -238,6 +238,29 @@ impl Store {
     /// Mark a message as handed over. Idempotent: a second ack for the same
     /// message is not an error, because the client may have crashed between
     /// writing the draft and hearing the answer.
+    /// One pending message, for a preview before discarding it.
+    pub fn message(&self, to: &str, id: &str, now: i64) -> Result<Option<Message>> {
+        Ok(self
+            .conn
+            .query_row(
+                "select id, from_box, project, body, created_at
+                   from messages
+                  where id = ?1 and to_box = ?2
+                    and delivered_at is null and expires_at > ?3",
+                params![id, to, now],
+                |r| {
+                    Ok(Message {
+                        id: r.get(0)?,
+                        from: r.get(1)?,
+                        project: r.get(2)?,
+                        body: r.get(3)?,
+                        created: r.get(4)?,
+                    })
+                },
+            )
+            .optional()?)
+    }
+
     pub fn ack(&self, to: &str, id: &str, now: i64) -> Result<bool> {
         let changed = self.conn.execute(
             "update messages set delivered_at = ?3
