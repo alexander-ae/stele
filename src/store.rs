@@ -264,6 +264,16 @@ impl Store {
             .execute("delete from messages where expires_at <= ?1", [now])?)
     }
 
+    /// What a `status` call shows: the same count the queue cap uses.
+    pub fn pending(&self, to: &str, now: i64) -> Result<i64> {
+        Ok(self.conn.query_row(
+            "select count(*) from messages
+              where to_box = ?1 and delivered_at is null and expires_at > ?2",
+            params![to, now],
+            |r| r.get(0),
+        )?)
+    }
+
     pub fn count(&self) -> Result<i64> {
         Ok(self
             .conn

@@ -567,3 +567,32 @@ fn one_bad_message_does_not_block_the_rest() {
         "the failed message is retried: {recorded}"
     );
 }
+
+#[test]
+fn status_shows_the_mailbox_and_pending() {
+    let dir = tempdir();
+    let db = dir.path().join("stele.db");
+    let dell_token = token(&db, "dell");
+    let laptop_token = token(&db, "laptop");
+    let server = start(&db);
+    let dell = login(&server, dir.path(), "dell", &dell_token);
+    let laptop = login(&server, dir.path(), "laptop", &laptop_token);
+
+    ok(send(&laptop, "dell", "api", "first"));
+    ok(send(&laptop, "dell", "api", "second"));
+    ok(send(&dell, "laptop", "api", "for the laptop"));
+
+    let dell_status = ok(stele(
+        &["--config", dell.config.to_str().unwrap(), "status"],
+        &[],
+    ));
+    assert!(dell_status.contains("mailbox: dell"), "{dell_status}");
+    assert!(dell_status.contains("pending: 2"), "{dell_status}");
+
+    let laptop_status = ok(stele(
+        &["--config", laptop.config.to_str().unwrap(), "status"],
+        &[],
+    ));
+    assert!(laptop_status.contains("mailbox: laptop"), "{laptop_status}");
+    assert!(laptop_status.contains("pending: 1"), "{laptop_status}");
+}

@@ -4,7 +4,7 @@
 
 use crate::api::{
     self, ErrorResponse, MeResponse, MessagesResponse, OkResponse, PeersResponse, SendRequest,
-    SendResponse,
+    SendResponse, StatusResponse,
 };
 use crate::http::{self, ReadError, Request};
 use crate::store::{InsertOutcome, Store};
@@ -150,13 +150,21 @@ fn route(store: &Store, request: &Request) -> Result<Reply> {
             ))
         }
 
+        ("GET", "/status") => {
+            let Some(mailbox) = authenticated(store, request)? else {
+                return Ok(unauthorized());
+            };
+            let pending = store.pending(&mailbox, time::now())?;
+            Ok(Reply::json(200, &StatusResponse { mailbox, pending }))
+        }
+
         ("POST", "/messages") => send(store, request),
         ("GET", "/messages") => inbox(store, request, now),
         ("POST", p) if p.starts_with("/messages/") && p.ends_with("/ack") => {
             acknowledge(store, request, now)
         }
 
-        (_, "/messages") | (_, "/me") | (_, "/peers") => {
+        (_, "/messages") | (_, "/me") | (_, "/peers") | (_, "/status") => {
             Ok(Reply::error(405, "method not allowed"))
         }
         _ => Ok(Reply::error(404, "no such endpoint")),

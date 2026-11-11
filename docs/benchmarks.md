@@ -27,7 +27,7 @@ request and holds none open.
 
 | | measured |
 |---|---|
-| binary, stripped | 2,767,656 bytes (2.77 MB) |
+| binary, stripped | 2,784,552 bytes (2.78 MB) |
 | RSS, `serve` idle | 5,716 KB, one thread |
 | RSS, `serve` after the read benchmark | 5,804 KB |
 | CPU, `serve` idle | 0 ticks over 10 s (`utime+stime` from `/proc`) |
@@ -125,7 +125,7 @@ also be compared on idle RSS and on a 5-second load run (8 threads):
 The system-SQLite row is not missing a number: `libsqlite3.so` is not
 installed on this machine and installing it needs sudo, so the link fails.
 Compiling SQLite in is what makes the binary a single file with nothing to
-match on the host — and it is what anathem does. That is 2 MB of the 2.77 MB.
+match on the host — and it is what anathem does. That is 2 MB of the 2.78 MB.
 
 ## For scale: anathem
 

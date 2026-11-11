@@ -2,6 +2,7 @@
 
 use crate::api::{
     ErrorResponse, MeResponse, Message, MessagesResponse, PeersResponse, SendRequest, SendResponse,
+    StatusResponse,
 };
 use crate::http::{self, Endpoint};
 use anyhow::{bail, Context, Result};
@@ -55,6 +56,10 @@ impl Api {
 
     pub fn peers(&self) -> Result<PeersResponse> {
         self.json("GET", "/peers", None)
+    }
+
+    pub fn status(&self) -> Result<StatusResponse> {
+        self.json("GET", "/status", None)
     }
 
     pub fn send(&self, request: &SendRequest) -> Result<SendResponse> {
