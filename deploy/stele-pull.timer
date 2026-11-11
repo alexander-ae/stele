@@ -1,0 +1,11 @@
+[Unit]
+Description=Run stele pull every five minutes
+Documentation=https://gitlab.com/__alexander__/stele
+
+[Timer]
+OnCalendar=*:0/5
+Persistent=true
+RandomizedDelaySec=20
+
+[Install]
+WantedBy=timers.target
