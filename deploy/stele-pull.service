@@ -1,7 +1,9 @@
 [Unit]
 Description=stele pull: turn unread messages into anathem drafts
 Documentation=https://gitlab.com/__alexander__/stele
-After=network-online.target tailscaled.service
+After=network-online.target
+# If the mailbox is only reachable after a VPN, add its unit here:
+# After=tailscaled.service
 
 [Service]
 Type=oneshot

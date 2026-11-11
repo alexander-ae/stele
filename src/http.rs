@@ -190,7 +190,7 @@ impl Endpoint {
     pub fn parse(url: &str) -> Result<Self> {
         let rest = url.strip_prefix("http://").with_context(|| {
             format!(
-                "{url:?} is not an http:// url; stele does not do TLS itself (put it on the tailnet)"
+                "{url:?} is not an http:// url; stele does not do TLS itself (use a private network or a tunnel)"
             )
         })?;
         let (authority, path) = match rest.find('/') {

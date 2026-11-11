@@ -11,7 +11,7 @@ use std::time::Duration;
 
 /// A send is idempotent on the server because the request carries the same
 /// `client_id` on every attempt, so a dropped connection is worth retrying.
-/// Three attempts is enough for a tailnet hiccup; the whole command still
+/// Three attempts is enough for a network hiccup; the whole command still
 /// fails fast when the mailbox is truly down.
 const SEND_ATTEMPTS: usize = 3;
 const RETRY_BACKOFF: Duration = Duration::from_millis(100);

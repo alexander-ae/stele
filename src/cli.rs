@@ -78,7 +78,7 @@ Commands:
   status   server, mailbox and how many messages are waiting
   send     queues one message; the body may come from stdin (`-`)
   pull     fetches unread messages and writes each as an anathem draft
-  serve    runs the mailbox; it listens on plain HTTP and is meant for a tailnet
+  serve    runs the mailbox; it listens on plain HTTP and is meant for a private network
   token    creates, rotates, lists or removes the server's mailboxes
 
 Environment:

@@ -17,8 +17,8 @@ install -m 755 target/release/stele ~/.local/bin/stele
 stele --db ~/.local/share/stele/stele.db token add dell
 stele --db ~/.local/share/stele/stele.db token add laptop
 
-# edit the bind address in the unit first — the interface you trust:
-# a Tailscale IP, a LAN IP, or 127.0.0.1 if the port is reached through a tunnel
+# edit the bind address in the unit first — the private interface you
+# trust: a tailnet, VPN or LAN address, or 127.0.0.1 behind a tunnel
 mkdir -p ~/.config/systemd/user
 cp deploy/stele-serve.service ~/.config/systemd/user/
 systemctl --user daemon-reload
@@ -27,11 +27,11 @@ systemctl --user status stele-serve
 ```
 
 The unit prints `listening on http://<address>` on start. Check it from
-another machine that can reach the port (on the tailnet, a LAN, or through an
-SSH tunnel):
+another machine that can reach the port (on the private network — tailnet,
+VPN, LAN — or through an SSH tunnel):
 
 ```bash
-curl -s http://<tailscale-ip>:3900/health   # {"ok":true}
+curl -s http://<private-ip>:3900/health   # {"ok":true}
 ```
 
 If the service stops when you close the session, the user manager needs to
@@ -43,7 +43,7 @@ The receiving side needs anathem 0.10 or newer: `stele pull` passes
 `--ext-id`, the flag that makes a retried delivery one draft.
 
 ```bash
-stele login --url http://<tailscale-ip>:3900 --token -
+stele login --url http://<private-ip>:3900 --token -
 # paste the token printed by `token add`, then Ctrl-D
 stele whoami     # must print the mailbox name
 ```

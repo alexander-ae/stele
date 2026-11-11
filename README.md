@@ -54,13 +54,13 @@ On the machine that is always on — the mailbox:
 ```bash
 stele --db ~/.local/share/stele/stele.db token add dell
 stele --db ~/.local/share/stele/stele.db token add laptop
-stele --db ~/.local/share/stele/stele.db serve --bind <tailscale-ip>:3900
+stele --db ~/.local/share/stele/stele.db serve --bind <private-ip>:3900
 ```
 
 Each `token add` prints the token **once**, on stdout, and how to use it on
 stderr. The server listens on plain HTTP; bind it to the interface you trust —
-a tailnet address, a VPN address, a LAN address, or `127.0.0.1` behind a
-tunnel — and do not expose the port to a network you do not control.
+a private address (tailnet, VPN, LAN) or `127.0.0.1` behind a tunnel — and do
+not expose the port to a network you do not control.
 
 On every machine, once:
 
@@ -74,9 +74,10 @@ The config lives in `~/.config/stele/config.json`, mode `0600`.
 
 ## Transport
 
-stele does not know about Tailscale. It opens a TCP connection to
-`http://host:port` and speaks HTTP/1.1; the tailnet is just the address and the
-encryption this README happens to use. Any route that reaches the port works:
+stele is network-agnostic. It opens a TCP connection to `http://host:port` and
+speaks HTTP/1.1. The examples use a tailnet because that is the network this
+machine is on, not because the binary knows about it: any route that reaches
+the port works:
 
 - a tailnet, a WireGuard or other VPN, or a home/lab LAN;
 - an SSH tunnel, when the machines have SSH but no shared network:
