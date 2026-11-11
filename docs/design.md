@@ -190,11 +190,15 @@ that led here, with the size each crate adds to a stripped binary, is in
 - **`--ext-id` in anathem.** About 20 lines and a test: a `save --external`
   flag that writes `ext_id`, whose unique index already exists. It would make
   `pull` idempotent instead of at-least-once. Worth doing before anyone runs
-  the timer every minute.
+  the timer every minute. Tracked in
+  [anathem#59](https://gitlab.com/__alexander__/anathem/-/issues/59).
 - **A count in the MCP greeting.** "3 messages waiting; `mem recent
   --all --external`" is ~20 lines in anathem and would save the agent from
   discovering the queue by accident. It spends tokens in every session, so it
-  should be measured before it is added.
+  should be measured before it is added. Tracked in
+  [anathem#60](https://gitlab.com/__alexander__/anathem/-/issues/60), with the
+  empty-window hint as
+  [anathem#61](https://gitlab.com/__alexander__/anathem/-/issues/61).
 - **Where the pull runs.** A timer is enough because a person accepts the
   drafts anyway. A `SessionStart` hook would make it immediate, at the cost of
   one agent-specific integration per client.

@@ -137,7 +137,8 @@ what routes the note to the right work.
 - **Delivers at least once.** If `stele pull` dies between writing the draft
   and the acknowledgement, the message comes back and anathem gets a second
   draft; `mem forget <id>` removes it. A small `--ext-id` patch to anathem
-  would make that impossible; see the open questions in the design.
+  ([#59](https://gitlab.com/__alexander__/anathem/-/issues/59)) would make that
+  impossible.
 
 ## License
 
