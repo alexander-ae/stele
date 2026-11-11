@@ -78,7 +78,10 @@ random bytes as hex once, and `token rotate` replaces it.
 
 `POST /messages` takes a `client_id` chosen by the sender. `(from, client_id)`
 is unique, so retrying a send after a timeout returns the original id instead
-of duplicating the message.
+of duplicating the message. `stele send` retries a transport failure — connect,
+write, read, timeout — up to three times with that same id; an HTTP answer is
+never retried. The server collapses the duplicate; the CLI is the part that has
+to keep the key.
 
 ## Storage
 
@@ -95,9 +98,14 @@ messages(id, from_box, to_box, client_id, project, body,
 Limits, enforced on the server:
 
 - TTL of 7 days; expired rows are deleted on every write and every inbox read.
-- Body capped at 32 KB, project and mailbox names at 64 bytes.
+- Body capped at 32 KB, project and mailbox names at 64 bytes. The HTTP request
+  cap is a separate 64 KB, so a body at the documented limit fits inside its
+  JSON envelope.
 - 200 pending (unacknowledged) messages per recipient; a further send gets
   `429` instead of filling the disk.
+- One inbox read returns at most ~1 MB of bodies. The client acknowledges what
+  it receives, so a full mailbox drains in several pulls instead of producing a
+  response the client would refuse to read.
 
 Expiry does not depend on `pull`. Every request that writes or reads messages
 sweeps expired rows, and the pending count in the cap already ignores rows
@@ -121,6 +129,10 @@ somebody accepts.
 `pull` exits without acknowledging and the message stays in the mailbox.
 Falling back to a save without the key would reintroduce the duplicate this
 exists to prevent; a clear failure beats a silent regression.
+
+`pull` delivers the batch message by message. If `mem` refuses one, that
+message stays unread and is reported; the rest are written and acknowledged,
+and the command exits 1 with the count. One bad note cannot hold the queue.
 
 ## Announcing a draft
 

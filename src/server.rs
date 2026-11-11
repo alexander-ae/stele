@@ -43,7 +43,7 @@ pub fn serve(bind: &str, db: &Path, verbose: bool) -> Result<()> {
 }
 
 fn handle(store: &Store, stream: &mut TcpStream, verbose: bool) -> Result<()> {
-    let request = match http::read_request(stream, api::MAX_BODY) {
+    let request = match http::read_request(stream, api::MAX_REQUEST) {
         Ok(r) => r,
         Err(ReadError::Io(e)) => {
             // A client that hangs up is not an event worth a line in the log.
@@ -69,7 +69,7 @@ fn handle(store: &Store, stream: &mut TcpStream, verbose: bool) -> Result<()> {
                 stream,
                 413,
                 &json(&ErrorResponse {
-                    error: format!("body over {} bytes", api::MAX_BODY),
+                    error: format!("request body over {} bytes", api::MAX_REQUEST),
                 }),
             )?;
             return Ok(());
@@ -243,7 +243,7 @@ fn inbox(store: &Store, request: &Request, now: i64) -> Result<Reply> {
         .and_then(|v| v.parse::<i64>().ok())
         .map(|v| v.clamp(1, api::MAX_PENDING))
         .unwrap_or(50);
-    let messages = store.unread(&mailbox, limit, now)?;
+    let messages = store.unread(&mailbox, limit, now, api::MAX_INBOX_BYTES)?;
     Ok(Reply::json(200, &MessagesResponse { messages }))
 }
 

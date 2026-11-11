@@ -140,6 +140,30 @@ fn fake_mem(dir: &Path) -> PathBuf {
     path
 }
 
+fn fake_mem_failing_on(dir: &Path, marker: &str) -> PathBuf {
+    let path = dir.join("mem-fail");
+    let mut file = std::fs::File::create(&path).unwrap();
+    writeln!(file, "#!/bin/sh").unwrap();
+    writeln!(file, "body=$(cat)").unwrap();
+    writeln!(file, "if printf '%s' \"$body\" | grep -q '{marker}'; then").unwrap();
+    writeln!(file, "  echo FAIL >> \"$MEM_LOG\"").unwrap();
+    writeln!(file, "  echo 'anathem refused this note' >&2").unwrap();
+    writeln!(file, "  exit 1").unwrap();
+    writeln!(file, "fi").unwrap();
+    writeln!(
+        file,
+        "{{ printf 'ARGS %s\\n' \"$*\"; printf '%s\\n' \"$body\"; printf 'END\\n'; }} >> \"$MEM_LOG\""
+    )
+    .unwrap();
+    drop(file);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    path
+}
+
 #[test]
 fn a_message_travels_as_a_draft_and_is_acknowledged_once() {
     let dir = tempdir();
@@ -425,4 +449,121 @@ fn two_mailboxes_cannot_share_a_name() {
     let again = stele(&["--db", db.to_str().unwrap(), "token", "add", "dell"], &[]);
     assert!(!again.status.success());
     assert!(String::from_utf8_lossy(&again.stderr).contains("already exists"));
+}
+
+#[test]
+fn a_body_at_the_cap_is_accepted_and_one_byte_over_is_not() {
+    let dir = tempdir();
+    let db = dir.path().join("stele.db");
+    let dell_token = token(&db, "dell");
+    let server = start(&db);
+    let dell = login(&server, dir.path(), "dell", &dell_token);
+
+    let at_cap = "x".repeat(stele::api::MAX_BODY);
+    let sent = ok(send(&dell, "dell", "api", &at_cap));
+    assert!(sent.starts_with("queued as "), "{sent}");
+
+    let over = send(&dell, "dell", "api", &format!("{at_cap}x"));
+    assert!(!over.status.success());
+    assert!(
+        String::from_utf8_lossy(&over.stderr).contains("413"),
+        "one byte over the body cap has to be refused"
+    );
+}
+
+#[test]
+fn a_full_inbox_of_large_notes_drains_in_batches() {
+    let dir = tempdir();
+    let db = dir.path().join("stele.db");
+    let dell_token = token(&db, "dell");
+    let server = start(&db);
+    let dell = login(&server, dir.path(), "dell", &dell_token);
+    let endpoint = Endpoint::parse(&server.url).unwrap();
+
+    // 70 * 32.6 KB is 2.28 MB: more than the client's 2 MB response cap, and
+    // far more than one 1 MB batch. Before the byte budget this made the first
+    // pull fail with "response is too large" and the inbox never drained.
+    let body = "x".repeat(32_600);
+    for i in 0..70 {
+        let payload = serde_json::json!({
+            "client_id": format!("batch-{i}"),
+            "to": "dell",
+            "project": "api",
+            "body": body
+        });
+        let (status, raw) = call(
+            &endpoint,
+            "POST",
+            "/messages",
+            Some(&dell_token),
+            Some(&serde_json::to_vec(&payload).unwrap()),
+        )
+        .unwrap();
+        assert_eq!(status, 201, "{}", String::from_utf8_lossy(&raw));
+    }
+
+    let mem = fake_mem(dir.path());
+    let log = dir.path().join("mem.log");
+    let mut pulls = 0;
+    loop {
+        let out = ok(pull(&dell, &mem, &log, &["--limit", "200"]));
+        pulls += 1;
+        if out.is_empty() {
+            break;
+        }
+        assert!(pulls < 10, "the inbox did not drain in batches");
+    }
+    assert!(pulls >= 2, "70 large notes cannot fit in one batch");
+    assert_eq!(
+        std::fs::read_to_string(&log)
+            .unwrap()
+            .matches("ARGS")
+            .count(),
+        70
+    );
+    assert!(ok(pull(&dell, &mem, &log, &[])).is_empty());
+}
+
+#[test]
+fn one_bad_message_does_not_block_the_rest() {
+    let dir = tempdir();
+    let db = dir.path().join("stele.db");
+    let dell_token = token(&db, "dell");
+    let server = start(&db);
+    let dell = login(&server, dir.path(), "dell", &dell_token);
+    ok(send(
+        &dell,
+        "dell",
+        "api",
+        "POISON: anathem will refuse this",
+    ));
+    ok(send(&dell, "dell", "api", "good one"));
+    ok(send(&dell, "dell", "api", "good two"));
+
+    let mem = fake_mem_failing_on(dir.path(), "POISON");
+    let log = dir.path().join("mem.log");
+
+    let first = pull(&dell, &mem, &log, &[]);
+    assert!(!first.status.success(), "one failure has to be reported");
+    let stderr = String::from_utf8_lossy(&first.stderr);
+    assert!(stderr.contains("1 of 3"), "{stderr}");
+
+    let recorded = std::fs::read_to_string(&log).unwrap();
+    assert_eq!(recorded.matches("ARGS").count(), 2, "{recorded}");
+    assert_eq!(recorded.matches("FAIL").count(), 1, "{recorded}");
+
+    // The good ones are acknowledged; the second pull retries only the bad one.
+    let second = pull(&dell, &mem, &log, &[]);
+    assert!(!second.status.success());
+    let recorded = std::fs::read_to_string(&log).unwrap();
+    assert_eq!(
+        recorded.matches("ARGS").count(),
+        2,
+        "acknowledged messages must not come back: {recorded}"
+    );
+    assert_eq!(
+        recorded.matches("FAIL").count(),
+        2,
+        "the failed message is retried: {recorded}"
+    );
 }
