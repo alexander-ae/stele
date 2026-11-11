@@ -3,6 +3,10 @@
 A mailbox between coding agents, on separate machines, with anathem as the
 archive. This document describes what is built in `src/` and why.
 
+The landscape it borrows from is in [prior-art.md](prior-art.md), the threat
+model in [security.md](security.md), and the note format in
+[handoff.md](handoff.md).
+
 ## The rule that decides everything else
 
 **A message arrives as a draft, never as active memory.**
@@ -29,7 +33,7 @@ in the draft that already exists instead of writing a second one.
 | `stele pull` | a timer on the receiving machine | fetches unread, writes drafts, acknowledges |
 | `stele serve` | the always-on machine | stores and serves messages |
 | `stele token add\|rotate\|list\|remove` | the mailbox operator, on the server | manages tokens, on the server's SQLite file |
-| `stele login` / `whoami` / `peers` | each client | writes or checks the client config, lists mailboxes |
+| `stele login` / `whoami` / `peers` / `status` | each client | writes or checks the client config, lists mailboxes, or reports how many messages are waiting |
 
 No MCP server. A second MCP server per agent would add tools to every prompt
 for something the shell already does, and it would put `stele` between the
@@ -53,6 +57,7 @@ a flag to switch on.
 GET  /health                -> {"ok":true}                  no token
 GET  /me                    -> {"mailbox":"dell"}
 GET  /peers                 -> {"mailboxes":["dell","laptop"]}
+GET  /status                -> {"mailbox":"dell","pending":3}
 POST /messages              -> {"id":"…","duplicate":false}  201, or 200 on a retry
 GET  /messages?unread=1&limit=50 -> {"messages":[…]}
 POST /messages/{id}/ack     -> 204
@@ -163,7 +168,7 @@ running. Measured on the Dell (Ubuntu 26.04, 4 cores), release build with
 
 | | target | measured |
 |---|---|---|
-| binary | 2.5–3 MB | 2.77 MB |
+| binary | 2.5–3 MB | 2.78 MB |
 | RSS, idle | ~6 MB | 5.7 MB, one thread |
 | CPU, idle | 0% | 0 ticks over 10 s |
 | local latency | < 1 ms | send p50 0.24 ms, p99 0.82 ms; ack p50 0.15 ms |

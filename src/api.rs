@@ -66,6 +66,13 @@ pub struct PeersResponse {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+pub struct StatusResponse {
+    pub mailbox: String,
+    /// Unacknowledged, unexpired messages for this mailbox.
+    pub pending: i64,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
 pub struct ErrorResponse {
     pub error: String,
 }

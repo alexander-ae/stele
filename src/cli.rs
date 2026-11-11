@@ -49,6 +49,7 @@ pub fn run() -> Result<()> {
         "login" => login(&mut parser, config_path),
         "whoami" => whoami(&mut parser, config_path),
         "peers" => peers(&mut parser, config_path),
+        "status" => status(&mut parser, config_path),
         "send" => send(&mut parser, config_path),
         "pull" => pull_command(&mut parser, config_path),
         other => bail!("unknown command {other:?}; run `stele --help`"),
@@ -64,6 +65,7 @@ usage:
   stele [--config PATH] login --url URL --token TOKEN|-
   stele [--config PATH] whoami
   stele [--config PATH] peers
+  stele [--config PATH] status
   stele [--config PATH] send --to MAILBOX --project PROJECT [BODY|-]
   stele [--config PATH] pull [--dry-run] [--limit N] [--mem PATH] [--mem-db PATH]
   stele [--db PATH] serve [--bind ADDR] [--verbose]
@@ -73,6 +75,7 @@ Commands:
   login    validates the token against the server and writes the config (0600)
   whoami   prints the mailbox this machine is
   peers    lists the mailboxes the server knows
+  status   server, mailbox and how many messages are waiting
   send     queues one message; the body may come from stdin (`-`)
   pull     fetches unread messages and writes each as an anathem draft
   serve    runs the mailbox; it listens on plain HTTP and is meant for a tailnet
@@ -208,6 +211,17 @@ fn peers(parser: &mut lexopt::Parser, config_path: Option<PathBuf>) -> Result<()
     for mailbox in api.peers()?.mailboxes {
         println!("{mailbox}");
     }
+    Ok(())
+}
+
+fn status(parser: &mut lexopt::Parser, config_path: Option<PathBuf>) -> Result<()> {
+    no_arguments(parser)?;
+    let config = load_config(config_path)?;
+    let api = Api::new(&config.url, config.token)?;
+    let status = api.status()?;
+    println!("server:  {}", api.endpoint.authority);
+    println!("mailbox: {}", status.mailbox);
+    println!("pending: {}", status.pending);
     Ok(())
 }
 
