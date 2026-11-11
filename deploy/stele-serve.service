@@ -1,14 +1,17 @@
 [Unit]
 Description=stele mailbox
 Documentation=https://gitlab.com/__alexander__/stele
-After=network-online.target tailscaled.service
+After=network-online.target
 Wants=network-online.target
+# If the bind address only exists after a VPN, add its unit here:
+# After=tailscaled.service
 
 [Service]
 Type=simple
-# Replace the address with this machine's Tailscale IP. Do not bind 0.0.0.0:
-# the mailbox is plain HTTP and belongs on the tailnet only.
-ExecStart=%h/.local/bin/stele --db %h/.local/share/stele/stele.db serve --bind 100.x.y.z:3900
+# Replace the address with the private address this machine has (tailnet,
+# VPN or LAN). Do not bind 0.0.0.0: the mailbox is plain HTTP and belongs on a
+# trusted network only.
+ExecStart=%h/.local/bin/stele --db %h/.local/share/stele/stele.db serve --bind 10.0.0.10:3900
 Restart=on-failure
 RestartSec=2
 

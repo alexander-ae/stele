@@ -141,8 +141,8 @@ the argument for a separate daemon rather than another mode inside `mem`.
 
 ## What this does not measure
 
-- **The tailnet.** Loopback has no latency. A direct Tailscale link adds a
-  fraction of a millisecond; a relayed one adds tens. That dominates
+- **The network.** Loopback has no latency. A direct link on a private network
+  adds a fraction of a millisecond; a relayed VPN adds tens. That dominates
   everything above, and no code in stele changes it.
 - **Concurrent writers.** The server serialises requests, so the write path is
   never concurrent by construction.

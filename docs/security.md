@@ -22,13 +22,13 @@ untrusted text into trusted text.
 
 | threat | what it can do | what stele does | residual risk |
 |---|---|---|---|
-| **Network attacker** | Read or modify plain HTTP between machines. | Nothing in the binary: TLS is deliberately absent. The documented deployment binds a tailnet address, where WireGuard encrypts the link. | A LAN or public bind without a VPN is plaintext. The token and the bodies are exposed. |
+| **Network attacker** | Read or modify plain HTTP between machines. | Nothing in the binary: TLS is deliberately absent. The documented deployment binds a private address (tailnet, VPN, LAN), where the link is encrypted or trusted. | A LAN or public bind without a VPN is plaintext. The token and the bodies are exposed. |
 | **Token theft** | Read the inbox, send as that mailbox, ack or discard. | Tokens are 32 random bytes, stored as SHA-256; the client config and the database are `0600`; `token rotate` replaces one. | Anyone with the file, or root on the client, has the mailbox. No per-token rate limit yet. |
 | **Malicious or compromised peer** | Fill the queue, send misleading text, choose a project name. | The sender is the token's mailbox; 200 pending per recipient; 32 KB body; 7-day TTL; a draft never becomes active memory by itself. | The peer can still send 200 plausible lies. The human review is the only filter. |
 | **Compromised agent on the receiver** | Read `~/.anathem/mem.db`, run `mem recent`, `mem accept`, `mem save`, and `stele` itself. | Nothing: same user, same files. | **The draft gate is a review gate, not a security boundary.** See below. |
 | **Prompt injection inside a message** | Make the receiving model do something when it reads the draft. | The draft is not in search and not in the greeting. `pull` prints only a first line; the body is read with `mem show`, as a tool result. The count in the greeting contains no message text. After acceptance, the note is labelled `[from: …]` and anathem frames memories as data. | A person can accept a malicious note; a model can follow it. The gate reduces the window, it does not remove the content. |
 | **Exfiltration through `stele send`** | Send private text to another mailbox. | The recipient must be a configured mailbox; the body is capped at 32 KB; 200 pending per recipient bounds the bandwidth; the server records who sent what until TTL. | `send` is a channel out. Do not run an agent with secrets and a token it does not need; the caps bound volume, not judgment. |
-| **Denial of service** | Open connections and stall; fill the queue; fill the disk. | One blocking accept loop; 10 s read/write timeout; 16 KB headers; 64 KB request; 200 pending; TTL; one SQLite file. | A tailnet peer can hold the loop for up to 10 s per connection. A compromised token can keep a mailbox at its cap. There is no per-sender rate limit. |
+| **Denial of service** | Open connections and stall; fill the queue; fill the disk. | One blocking accept loop; 10 s read/write timeout; 16 KB headers; 64 KB request; 200 pending; TTL; one SQLite file. | A peer on the private network can hold the loop for up to 10 s per connection. A compromised token can keep a mailbox at its cap. There is no per-sender rate limit. |
 | **Storage and backups** | Read a stolen disk or backup. | SQLite file `0600`, directory `0700`; bodies expire after 7 days; acked rows stay until then. | Plaintext at rest. Backups inherit the same exposure. |
 
 ## The gate is a review gate
@@ -90,7 +90,7 @@ Consequences for operation:
 
 ## Operational checklist
 
-- Bind the tailnet address, not `0.0.0.0`, and keep the port off the public
+- Bind the private address, not `0.0.0.0`, and keep the port off the public
   interface.
 - `stele token add` per machine; `token rotate` on suspicion; `token remove`
   when a machine is gone (it also deletes its undelivered mail).
@@ -103,7 +103,7 @@ Consequences for operation:
 
 ## What stele deliberately does not do
 
-- **TLS in the binary.** Use a tailnet, a VPN or an SSH tunnel. It refuses
+- **TLS in the binary.** Use a VPN, a tailnet or an SSH tunnel. It refuses
   `https://` instead of pretending.
 - **Per-message signatures or proof-carrying messages.** One owner, one
   server; the token is the identity. ATP/PCM are the reference if stele ever

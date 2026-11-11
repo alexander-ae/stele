@@ -29,12 +29,12 @@ turns each message into an anathem draft and keeps the human gate.
 
 | paper | finding | what it means for stele |
 |---|---|---|
-| [2610.38398](https://arxiv.org/abs/2610.38398) ATP | A server-mediated design with stable addresses, offline storage and signed envelopes supports long-lived cross-organization collaboration. | The architecture is sound. Signing is a federation feature, not a tailnet one. |
+| [2610.38398](https://arxiv.org/abs/2610.38398) ATP | A server-mediated design with stable addresses, offline storage and signed envelopes supports long-lived cross-organization collaboration. | The architecture is sound. Signing is a federation feature, not a single-owner one. |
 | [2610.36523](https://arxiv.org/abs/2610.36523) HSC-Bench | Structured handoff state improves evidence recovery in every model and continuation in most, over 1,039 tasks. | A handoff recipe (what changed, evidence, what is left) is worth more than raw prose. |
 | [2608.24569](https://arxiv.org/abs/2608.24569) | Constraints erode across handoffs: ownership deferral deactivates 76.7% of blockers, multihop compression 97.2%. | A note is not a contract. Do not send permissions or “musts” as prose; the receiver re-verifies. |
 | [2609.36855](https://arxiv.org/abs/2609.36855) | An incorrect upstream message flips a correct answer in up to 32% of cases; 94% of harmful cases copy the upstream answer. | Provenance and review matter more than fluent messages. |
 | [2610.33411](https://arxiv.org/abs/2610.33411) | Agent-to-agent “social engineering” works because identity, evidence and permission are separate judgments. | The token gives identity, not authority. A message cannot grant permission. |
-| [2610.39109](https://arxiv.org/abs/2610.39109) PCM | A2A and MCP authenticate the channel, not the sender's claims; proof-carrying messages attach evidence. | Signed claims only if stele federates. Inside one tailnet, the server is the trust anchor. |
+| [2610.39109](https://arxiv.org/abs/2610.39109) PCM | A2A and MCP authenticate the channel, not the sender's claims; proof-carrying messages attach evidence. | Signed claims only if stele federates. Inside one owner's network, the server is the trust anchor. |
 | [2610.35835](https://arxiv.org/abs/2610.35835) I-HITL | Human approval is only inalienable when it sits outside the agent's reach; agents can harvest OTPs. | The draft gate is a **review** gate: an agent with a shell can run `mem accept`. Say so plainly. |
 | [2610.31355](https://arxiv.org/abs/2610.31355) / [2611.12412](https://arxiv.org/abs/2611.12412) | Asynchronous shared buffers help; a single “check your workspace again” changes whether an agent looks. | Anathem 1.0's draft count in the greeting is exactly that nudge. |
 | [2610.32429](https://arxiv.org/abs/2610.32429) Async-RBench | Asynchronous agents fail most on duplicate reports and subagent failures. | Idempotency (`--ext-id`) and continue-on-error are the right direction. |
@@ -52,7 +52,7 @@ turns each message into an anathem draft and keeps the human gate.
 - **Shared memory across machines.** Letta and Supermemory share state; stele
   delivers a note to a machine that is offline and lets local memory decide
   what to keep.
-- **Federation and signed envelopes.** One owner, one tailnet. ATP and PCM are
+- **Federation and signed envelopes.** One owner, one private network. ATP and PCM are
   the reference if that ever changes.
 
 ## What is worth adding later

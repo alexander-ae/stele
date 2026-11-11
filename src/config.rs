@@ -104,8 +104,8 @@ fn warn_if_readable_by_others(_path: &Path) {}
 pub fn validate_url(url: &str) -> Result<()> {
     if url.starts_with("https://") {
         bail!(
-            "stele speaks plain HTTP: put the mailbox on the tailnet, where WireGuard \
-             already encrypts it, or terminate TLS in nginx and point --url at that"
+            "stele speaks plain HTTP: put the mailbox on a private network (a VPN, a \
+             tailnet or a LAN), or wrap the port in a tunnel"
         );
     }
     if !url.starts_with("http://") {
