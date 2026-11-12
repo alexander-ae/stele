@@ -6,6 +6,12 @@ and leaves it in [anathem](https://gitlab.com/__alexander__/anathem) as a draft.
 
 **Status: v0.1.0, working.** One binary, one SQLite file, no async runtime.
 
+The source, issues and merge requests live on
+[GitLab](https://gitlab.com/__alexander__/stele). The
+[GitHub repository](https://github.com/alexander-ae/stele) is a mirror that
+builds the binaries, nothing else: its issues are off and a merge request
+belongs on GitLab.
+
 ```
 stele send --to dell --project api "The API contract changed to v2"
 stele pull
