@@ -1,0 +1,111 @@
+# Builds every binary and leaves them as artifacts.
+#
+# stele lives on GitLab. This repository is a mirror that exists to compile:
+# GitHub Actions is free for public repositories, while GitLab's Free plan
+# gives 400 shared-runner minutes a month and has no macOS runners below
+# Premium.
+#
+# It publishes nothing. `scripts/publish-binaries.sh` (run by a person on
+# their machine) downloads the artifacts, hashes them and uploads them to the
+# GitLab release. No GitLab credential is stored on GitHub's side, and every
+# publication is a deliberate act.
+#
+# The checkout takes the tag and refuses to upload a binary that does not
+# report the version it was asked to build: a build farm that silently builds
+# the default branch is worse than no build farm.
+name: binaries
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'The tag being built, for example v0.1.0'
+        required: true
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # ubuntu-22.04 and not -latest: the binary must run on a glibc older
+          # than the one that built it. 22.04 gives 2.35; a binary built on
+          # 24.04 asks for 2.39 and refuses to start on Debian 12 or Ubuntu
+          # 22.04.
+          - name: linux-x86_64
+            runner: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+          - name: macos-arm64
+            runner: macos-latest
+            target: aarch64-apple-darwin
+          # The Intel Mac is cross-compiled from Apple Silicon: the SDK targets
+          # both architectures from either one. The binary cannot be run here,
+          # so the architecture is checked with `file` and the version is not
+          # asked for.
+          - name: macos-x86_64
+            runner: macos-latest
+            target: x86_64-apple-darwin
+            cross: true
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag }}
+          fetch-depth: 1
+
+      - name: Add the Rust target
+        run: rustup target add ${{ matrix.target }}
+
+      - name: Build
+        run: cargo build --release --locked --target ${{ matrix.target }}
+
+      - name: Check the checkout really is the tag
+        shell: bash
+        run: |
+          set -eu
+          git fetch --depth 1 origin "refs/tags/${{ inputs.tag }}:refs/tags/${{ inputs.tag }}" 2>/dev/null || true
+          expected="$(git rev-list -n 1 "${{ inputs.tag }}")"
+          obtained="$(git rev-parse HEAD)"
+          echo "tag ${{ inputs.tag }} is $expected, checkout is $obtained"
+          if [ "$expected" != "$obtained" ]; then
+            echo "::error::checked out $obtained while building ${{ inputs.tag }} ($expected)" >&2
+            exit 1
+          fi
+
+      - name: Check the binary reports the version
+        if: '!matrix.cross'
+        shell: bash
+        run: |
+          set -eu
+          bin="target/${{ matrix.target }}/release/stele"
+          expected="${{ inputs.tag }}"
+          expected="${expected#v}"
+          obtained="$("$bin" --version | awk '{print $2}')"
+          echo "asked for $expected, built $obtained"
+          if [ "$expected" != "$obtained" ]; then
+            echo "::error::built $obtained while publishing $expected" >&2
+            exit 1
+          fi
+
+      - name: Check the architecture when it cannot be run
+        if: matrix.cross
+        run: |
+          set -eu
+          file "target/${{ matrix.target }}/release/stele"
+          file "target/${{ matrix.target }}/release/stele" | grep -q x86_64
+
+      - name: Pack it
+        shell: bash
+        run: |
+          set -eu
+          cd "target/${{ matrix.target }}/release"
+          tar -czf "stele-${{ matrix.name }}.tar.gz" stele
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: stele-${{ matrix.name }}
+          path: target/${{ matrix.target }}/release/stele-${{ matrix.name }}.tar.gz
+          if-no-files-found: error
+          retention-days: 7
