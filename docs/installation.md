@@ -10,8 +10,11 @@ and hands each one to anathem as a draft; it does not keep memory of its own.
 
 ## Requirements
 
-- **Rust 1.89 or newer** to build (built and tested with 1.99). `Cargo.toml`
-  is the source of truth for the minimum.
+- **Rust 1.89 or newer** only to build from source (built and tested with
+  1.99). The prebuilt binary needs no Rust. `Cargo.toml` is the source of
+  truth for the minimum.
+- **A prebuilt platform**: Linux x86_64 (glibc 2.35 or newer) or macOS
+  arm64/x86_64. Other platforms can use `--build` with Rust and a C compiler.
 - **anathem 0.10 or newer** on every receiving machine: `pull` passes
   `mem save --external --ext-id`, which older versions do not know. anathem
   1.0 adds the greeting count that says drafts are waiting.
@@ -22,7 +25,30 @@ and hands each one to anathem as a draft; it does not keep memory of its own.
   SSH tunnel. The binary speaks plain HTTP and refuses `https://`; see
   [Transport](#transport).
 
-## Build and install
+## Install a release (recommended)
+
+```bash
+sh scripts/install.sh
+# or, without cloning:
+curl -fsSL https://gitlab.com/__alexander__/stele/-/raw/main/scripts/install.sh | sh
+```
+
+The script detects the platform, downloads `stele-<platform>.tar.gz` from the
+latest GitLab release, checks its `.sha256`, and installs the binary in
+`~/.local/bin`. It does not create tokens, services or config.
+
+| flag | meaning |
+|---|---|
+| `--tag v0.1.0` | install that release instead of the latest. |
+| `--prefix <dir>` | install somewhere other than `~/.local/bin`. |
+| `--build` | compile from source instead of downloading. |
+| `--no-verify` | skip the checksum (not recommended). |
+
+The first release is checked with `sha256`; a minisign signature comes in a
+later release. If the platform has no prebuilt binary, use `--build` with Rust
+and a C compiler installed.
+
+## Build from source
 
 ```bash
 git clone https://gitlab.com/__alexander__/stele.git
@@ -35,9 +61,8 @@ install -m 755 target/release/stele ~/.local/bin/stele
 `make` puts `~/.cargo/bin` on `PATH`; rustup was installed with
 `--no-modify-path`, so a fresh shell may not have `cargo` otherwise.
 
-There is no package and no install script. The binary is about 2.8 MB,
-stripped, and `rusqlite` compiles SQLite in, so there is no `libsqlite3-dev`
-to match against the host.
+The binary is about 2.8 MB, stripped, and `rusqlite` compiles SQLite in, so
+there is no `libsqlite3-dev` to match against the host.
 
 ## The mailbox machine
 
@@ -232,10 +257,10 @@ do not control, wrap the port (VPN, tailnet, SSH) instead of exposing it.
 
 ## Upgrades, backups and removal
 
-- **Upgrade:** replace the binary and restart `stele-serve`; the schema is
-  created with `create table if not exists` and has not changed, so an
-  existing database keeps working. A future schema change needs a migration;
-  there is none yet.
+- **Upgrade:** `sh scripts/install.sh` installs the latest release; then
+  restart `stele-serve` on the mailbox machine. The schema is created with
+  `create table if not exists` and has not changed, so an existing database
+  keeps working. A future schema change needs a migration; there is none yet.
 - **Backup:** `sqlite3 ~/.local/share/stele/stele.db ".backup backup.db"`, or
   copy the file with the service stopped. anathem is backed up separately.
 - **Rotate:** `stele --db … token rotate laptop`, then `stele login` again on
