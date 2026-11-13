@@ -29,7 +29,24 @@ mailbox nobody empties.
 
 ## Install
 
-Rust 1.89 or newer (built with 1.99).
+Prebuilt binary — Linux x86_64 (glibc 2.35+) and macOS arm64/x86_64:
+
+```bash
+sh scripts/install.sh
+```
+
+It downloads the latest GitLab release, checks its `sha256` and installs it in
+`~/.local/bin`. Without the repository:
+
+```bash
+curl -fsSL https://gitlab.com/__alexander__/stele/-/raw/main/scripts/install.sh | sh
+```
+
+`--tag v0.1.0`, `--prefix <dir>`, `--build` and `--no-verify` are described in
+[`docs/installation.md`](docs/installation.md). The first release is checked
+with `sha256`; a minisign signature comes in a later one.
+
+From source, with Rust 1.89 or newer (built with 1.99):
 
 ```bash
 cargo build --release
