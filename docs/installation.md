@@ -13,7 +13,7 @@ and hands each one to anathem as a draft; it does not keep memory of its own.
 - **Rust 1.89 or newer** only to build from source (built and tested with
   1.99). The prebuilt binary needs no Rust. `Cargo.toml` is the source of
   truth for the minimum.
-- **A prebuilt platform**: Linux x86_64 (glibc 2.35 or newer) or macOS
+- **A prebuilt platform**: Linux x86_64 (glibc 2.34 or newer) or macOS
   arm64/x86_64. Other platforms can use `--build` with Rust and a C compiler.
 - **anathem 0.10 or newer** on every receiving machine: `pull` passes
   `mem save --external --ext-id`, which older versions do not know. anathem
@@ -42,11 +42,32 @@ latest GitLab release, checks its `.sha256`, and installs the binary in
 | `--tag v0.1.0` | install that release instead of the latest. |
 | `--prefix <dir>` | install somewhere other than `~/.local/bin`. |
 | `--build` | compile from source instead of downloading. |
+| `--verify-signature` | check the minisign signature (needs `minisign`). |
 | `--no-verify` | skip the checksum (not recommended). |
 
-The first release is checked with `sha256`; a minisign signature comes in a
-later release. If the platform has no prebuilt binary, use `--build` with Rust
-and a C compiler installed.
+## Checking a release
+
+Releases are signed with [minisign](https://jedisct1.github.io/minisign/).
+Public key (ID `46EB3322796C3BBF`):
+
+```
+RWS/O2x5IjPrRqB3Ie40VlsV7wpp5AwR6cs9PxlokY7zYK6MN4FZoS50
+```
+
+```bash
+sh scripts/install.sh --verify-signature
+# or by hand:
+minisign -V -p stele.pub -m stele-linux-x86_64.tar.gz
+```
+
+The `.sha256` catches a corrupt download; it cannot catch a tampered release,
+because it travels with the file it describes. The signature is what says the
+bytes are the ones published. The public key is in [`stele.pub`](../stele.pub)
+and in the GitLab project description; the description is the copy outside the
+repository.
+
+If the platform has no prebuilt binary, use `--build` with Rust and a C
+compiler installed.
 
 ## Build from source
 

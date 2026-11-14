@@ -13,16 +13,23 @@ PREFIX="${STELE_PREFIX:-$HOME/.local/bin}"
 TAG="latest"
 BUILD=0
 VERIFY=1
+VERIFY_SIG=0
+
+# The public half of the minisign key. It is also in stele.pub and in the
+# GitLab project description; the copy outside the repository is the one a
+# tampered repository cannot change on its own.
+PUBLIC_KEY="RWS/O2x5IjPrRqB3Ie40VlsV7wpp5AwR6cs9PxlokY7zYK6MN4FZoS50"
 
 usage() {
     cat <<'FIN'
 Usage: sh scripts/install.sh [options]
 
-  --tag <vX.Y.Z>     install that release instead of the latest one
-  --prefix <dir>     where to install the binary (default ~/.local/bin)
-  --build            compile from source instead of downloading a binary
-  --no-verify        carry on even if the sha256 cannot be checked
-  -h, --help         this
+  --tag <vX.Y.Z>       install that release instead of the latest one
+  --prefix <dir>       where to install the binary (default ~/.local/bin)
+  --build              compile from source instead of downloading a binary
+  --verify-signature   check the minisign signature (needs minisign)
+  --no-verify          carry on even if the sha256 cannot be checked
+  -h, --help           this
 
 Variables: STELE_REPO (where to download from), STELE_PREFIX.
 
@@ -37,12 +44,13 @@ die()  { printf '  \033[31m✗\033[0m %s\n' "$1" >&2; exit 1; }
 
 while [ $# -gt 0 ]; do
     case "$1" in
-        --tag)       TAG="${2:?--tag needs a version}"; shift 2 ;;
-        --prefix)    PREFIX="${2:?--prefix needs a directory}"; shift 2 ;;
-        --build)     BUILD=1; shift ;;
-        --no-verify) VERIFY=0; shift ;;
-        -h|--help)   usage; exit 0 ;;
-        *)           echo "unknown option: $1" >&2; usage >&2; exit 2 ;;
+        --tag)              TAG="${2:?--tag needs a version}"; shift 2 ;;
+        --prefix)           PREFIX="${2:?--prefix needs a directory}"; shift 2 ;;
+        --build)            BUILD=1; shift ;;
+        --verify-signature) VERIFY_SIG=1; shift ;;
+        --no-verify)        VERIFY=0; shift ;;
+        -h|--help)          usage; exit 0 ;;
+        *)                  echo "unknown option: $1" >&2; usage >&2; exit 2 ;;
     esac
 done
 
@@ -87,6 +95,15 @@ else
     die "curl or wget is required"
 fi
 
+if [ "$VERIFY_SIG" -eq 1 ]; then
+    if ! command -v minisign >/dev/null 2>&1 && [ -x "$HOME/.local/bin/minisign" ]; then
+        PATH="$HOME/.local/bin:$PATH"
+        export PATH
+    fi
+    command -v minisign >/dev/null 2>&1 \
+        || die "minisign is required for --verify-signature"
+fi
+
 ASSET="stele-$PLATFORM.tar.gz"
 if [ "$TAG" = "latest" ]; then
     BASE="https://gitlab.com/$REPO/-/releases/permalink/latest/downloads"
@@ -116,6 +133,14 @@ if [ "$VERIFY" -eq 1 ]; then
     ok "sha256 verified"
 else
     warn "sha256 not checked (--no-verify)"
+fi
+
+if [ "$VERIFY_SIG" -eq 1 ]; then
+    fetch "$BASE/$ASSET.minisig" "$TMP/$ASSET.minisig" \
+        || die "the release has no .minisig for $ASSET; refusing an unchecked signature"
+    minisign -V -P "$PUBLIC_KEY" -m "$TMP/$ASSET" -x "$TMP/$ASSET.minisig" >/dev/null \
+        || die "the minisign signature does not verify"
+    ok "minisign signature verified"
 fi
 
 tar -xzf "$TMP/$ASSET" -C "$TMP"

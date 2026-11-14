@@ -14,8 +14,9 @@ anathem as the archive.
   and the mailbox and no message content.
 - Byte-batched inbox reads, a bounded queue (200 pending, 7-day TTL, 32 KB
   bodies) and a sender that retries a transport failure with the same id.
-- Prebuilt Linux x86_64 (glibc 2.35+) and macOS arm64/x86_64 binaries.
+- Prebuilt Linux x86_64 (glibc 2.34+) and macOS arm64/x86_64 binaries.
 - Installation and configuration guide in `docs/installation.md`.
 
-The binaries are checked with a published `.sha256`; signing with minisign
-comes in a later release.
+The assets are signed with minisign; the public key (ID `46EB3322796C3BBF`) is
+in `stele.pub` and in the GitLab project description. `install.sh
+--verify-signature` checks it.
