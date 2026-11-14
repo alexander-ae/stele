@@ -29,7 +29,7 @@ mailbox nobody empties.
 
 ## Install
 
-Prebuilt binary — Linux x86_64 (glibc 2.35+) and macOS arm64/x86_64:
+Prebuilt binary — Linux x86_64 (glibc 2.34+) and macOS arm64/x86_64:
 
 ```bash
 sh scripts/install.sh
@@ -42,9 +42,28 @@ It downloads the latest GitLab release, checks its `sha256` and installs it in
 curl -fsSL https://gitlab.com/__alexander__/stele/-/raw/main/scripts/install.sh | sh
 ```
 
-`--tag v0.1.0`, `--prefix <dir>`, `--build` and `--no-verify` are described in
-[`docs/installation.md`](docs/installation.md). The first release is checked
-with `sha256`; a minisign signature comes in a later one.
+`--tag v0.1.0`, `--prefix <dir>`, `--build`, `--verify-signature` and
+`--no-verify` are described in
+[`docs/installation.md`](docs/installation.md). Releases are signed with
+minisign.
+
+### Checking a release
+
+Public key (ID `46EB3322796C3BBF`):
+
+```
+RWS/O2x5IjPrRqB3Ie40VlsV7wpp5AwR6cs9PxlokY7zYK6MN4FZoS50
+```
+
+```bash
+sh scripts/install.sh --verify-signature
+# or by hand, after downloading an asset and its .minisig:
+minisign -V -p stele.pub -m stele-linux-x86_64.tar.gz
+```
+
+The key is also in [`stele.pub`](stele.pub) and in the GitLab project
+description. The description is the copy a repository tampered with on its own
+cannot change.
 
 From source, with Rust 1.89 or newer (built with 1.99):
 
