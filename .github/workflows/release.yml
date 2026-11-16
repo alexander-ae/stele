@@ -19,7 +19,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'The tag being built, for example v0.1.0'
+        description: 'The tag being built, for example v0.2.0'
         required: true
 
 jobs:

@@ -7,8 +7,8 @@
 # pipeline built, which the .sha256 already attests. The private key stays on
 # this machine and asks for its passphrase once.
 #
-#     sh scripts/sign-release.sh v0.1.0
-#     sh scripts/sign-release.sh v0.1.0 --dry-run
+#     sh scripts/sign-release.sh v0.2.0
+#     sh scripts/sign-release.sh v0.2.0 --dry-run
 #
 # The first time, generate the key pair and publish the public half:
 #
