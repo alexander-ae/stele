@@ -4,6 +4,8 @@
 //! an anathem draft, never as active memory, and this program never writes
 //! memory itself — it only hands the body to `mem save --external`.
 
+#![forbid(unsafe_code)]
+
 pub mod api;
 pub mod cli;
 pub mod client;

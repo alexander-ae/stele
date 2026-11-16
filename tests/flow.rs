@@ -408,9 +408,9 @@ fn an_oversized_body_is_refused_before_it_is_stored() {
 
     let body = "x".repeat(stele::api::MAX_BODY + 1);
     let refused = send(&dell, "dell", "api", &body);
-    assert!(!refused.status.success());
+    assert_eq!(refused.status.code(), Some(1));
     let stderr = String::from_utf8_lossy(&refused.stderr);
-    assert!(stderr.contains("413"), "{stderr}");
+    assert!(stderr.contains("the limit is 32768"), "{stderr}");
 
     // And nothing made it into the mailbox.
     let mem = fake_mem(dir.path());
@@ -522,9 +522,9 @@ fn a_body_at_the_cap_is_accepted_and_one_byte_over_is_not() {
     assert!(sent.starts_with("queued as "), "{sent}");
 
     let over = send(&dell, "dell", "api", &format!("{at_cap}x"));
-    assert!(!over.status.success());
+    assert_eq!(over.status.code(), Some(1));
     assert!(
-        String::from_utf8_lossy(&over.stderr).contains("413"),
+        String::from_utf8_lossy(&over.stderr).contains("the limit is 32768"),
         "one byte over the body cap has to be refused"
     );
 }
@@ -1111,4 +1111,195 @@ fn doctor_refuses_an_old_mem_and_skips_the_rest_of_anathem() {
         !stdout.contains("drafts"),
         "a mem that is too old should not be asked for drafts: {stdout}"
     );
+}
+
+fn request(
+    server: &Server,
+    method: &str,
+    path: &str,
+    token: Option<&str>,
+    body: Option<&[u8]>,
+) -> (u16, Vec<u8>) {
+    let endpoint = Endpoint::parse(&server.url).unwrap();
+    call(&endpoint, method, path, token, body).unwrap()
+}
+
+#[test]
+fn a_reused_client_id_cannot_carry_another_message() {
+    let dir = tempdir();
+    let db = dir.path().join("stele.db");
+    let dell_token = token(&db, "dell");
+    let laptop_token = token(&db, "laptop");
+    let server = start(&db);
+    let dell = login(&server, dir.path(), "dell", &dell_token);
+    let laptop = login(&server, dir.path(), "laptop", &laptop_token);
+
+    let first = ok(stele(
+        &[
+            "--config",
+            dell.config.to_str().unwrap(),
+            "send",
+            "--to",
+            "dell",
+            "--project",
+            "api",
+            "--client-id",
+            "shared",
+            "one",
+        ],
+        &[],
+    ));
+    assert!(first.starts_with("queued as "), "{first}");
+
+    // Same id, different recipient: the old answer would claim success and
+    // the note would never exist.
+    let clash = stele(
+        &[
+            "--config",
+            dell.config.to_str().unwrap(),
+            "send",
+            "--to",
+            "laptop",
+            "--project",
+            "api",
+            "--client-id",
+            "shared",
+            "two",
+        ],
+        &[],
+    );
+    assert_eq!(clash.status.code(), Some(3));
+    let stderr = String::from_utf8_lossy(&clash.stderr);
+    assert!(stderr.contains("409"), "{stderr}");
+
+    let mem = fake_mem(dir.path());
+    let log = dir.path().join("mem.log");
+    let pulled = ok(pull(&laptop, &mem, &log, &[]));
+    assert!(
+        pulled.is_empty(),
+        "the laptop got a message it should not: {pulled}"
+    );
+}
+
+#[test]
+fn login_keeps_the_optional_config_fields() {
+    let dir = tempdir();
+    let db = dir.path().join("stele.db");
+    let dell_token = token(&db, "dell");
+    let server = start(&db);
+    let dell = login(&server, dir.path(), "dell", &dell_token);
+    let mem = fake_mem(dir.path());
+    set_mem_bin(&dell.config, &mem);
+    set_notify(&dell.config, "true");
+
+    let rotated = ok(stele(
+        &["--db", db.to_str().unwrap(), "token", "rotate", "dell"],
+        &[],
+    ));
+    let again = login(&server, dir.path(), "dell", &rotated);
+
+    let text = std::fs::read_to_string(&again.config).unwrap();
+    let value: serde_json::Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(value["mem_bin"], mem.to_str().unwrap(), "{text}");
+    assert_eq!(value["notify_cmd"], "true", "{text}");
+}
+
+#[test]
+fn pull_reports_an_unreachable_server_with_exit_two() {
+    let dir = tempdir();
+    let db = dir.path().join("stele.db");
+    let dell_token = token(&db, "dell");
+    let server = start(&db);
+    let dell = login(&server, dir.path(), "dell", &dell_token);
+    let config = dell.config.clone();
+    let mem = fake_mem(dir.path());
+    drop(server);
+
+    let out = stele(
+        &[
+            "--config",
+            config.to_str().unwrap(),
+            "pull",
+            "--mem",
+            mem.to_str().unwrap(),
+        ],
+        &[],
+    );
+    assert_eq!(out.status.code(), Some(2));
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(stderr.contains("cannot connect"), "{stderr}");
+}
+
+#[test]
+fn a_body_at_the_cap_survives_json_escaping() {
+    let dir = tempdir();
+    let db = dir.path().join("stele.db");
+    let dell_token = token(&db, "dell");
+    let server = start(&db);
+    let dell = login(&server, dir.path(), "dell", &dell_token);
+
+    // Control characters become six bytes each inside the JSON envelope;
+    // the request cap has to be sized for that.
+    let body = "\u{1}".repeat(stele::api::MAX_BODY);
+    let sent = ok(send(&dell, "dell", "api", &body));
+    assert!(sent.starts_with("queued as "), "{sent}");
+}
+
+#[test]
+fn the_queue_cap_answers_429_and_health_is_public() {
+    let dir = tempdir();
+    let db = dir.path().join("stele.db");
+    let dell_token = token(&db, "dell");
+    let server = start(&db);
+    let _dell = login(&server, dir.path(), "dell", &dell_token);
+
+    for i in 0..stele::api::MAX_PENDING {
+        let payload = serde_json::json!({
+            "client_id": format!("cap{i}"),
+            "to": "dell",
+            "project": "api",
+            "body": "x",
+        });
+        let raw = serde_json::to_vec(&payload).unwrap();
+        let (status, body) = request(&server, "POST", "/messages", Some(&dell_token), Some(&raw));
+        assert_eq!(status, 201, "{}", String::from_utf8_lossy(&body));
+    }
+    let payload = serde_json::json!({
+        "client_id": "over",
+        "to": "dell",
+        "project": "api",
+        "body": "x",
+    });
+    let raw = serde_json::to_vec(&payload).unwrap();
+    let (status, _) = request(&server, "POST", "/messages", Some(&dell_token), Some(&raw));
+    assert_eq!(status, 429);
+
+    let (status, body) = request(&server, "GET", "/health", None, None);
+    assert_eq!(status, 200);
+    assert!(String::from_utf8_lossy(&body).contains("\"ok\":true"));
+    let (status, _) = request(&server, "POST", "/health", None, Some(b""));
+    assert_eq!(status, 405);
+}
+
+#[cfg(unix)]
+#[test]
+fn doctor_warns_about_a_readable_config_without_failing() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let dir = tempdir();
+    let db = dir.path().join("stele.db");
+    let dell_token = token(&db, "dell");
+    let server = start(&db);
+    let dell = login(&server, dir.path(), "dell", &dell_token);
+    let mem = fake_mem(dir.path());
+    set_mem_bin(&dell.config, &mem);
+    let log = dir.path().join("mem.log");
+    std::fs::set_permissions(&dell.config, std::fs::Permissions::from_mode(0o644)).unwrap();
+
+    let stdout = ok(stele(
+        &["--config", dell.config.to_str().unwrap(), "doctor"],
+        &[("MEM_LOG", &log)],
+    ));
+    assert!(stdout.contains("warn"), "{stdout}");
+    assert!(stdout.contains("chmod 600"), "{stdout}");
 }

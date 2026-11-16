@@ -43,7 +43,7 @@ pub fn serve(bind: &str, db: &Path, verbose: bool) -> Result<()> {
 }
 
 fn handle(store: &Store, stream: &mut TcpStream, verbose: bool) -> Result<()> {
-    let request = match http::read_request(stream, api::MAX_REQUEST) {
+    let request = match http::read_request(stream, api::MAX_REQUEST, IO_TIMEOUT) {
         Ok(r) => r,
         Err(ReadError::Io(e)) => {
             // A client that hangs up is not an event worth a line in the log.
@@ -168,7 +168,7 @@ fn route(store: &Store, request: &Request) -> Result<Reply> {
             discard(store, request, now)
         }
 
-        (_, "/messages") | (_, "/me") | (_, "/peers") | (_, "/status") => {
+        (_, "/messages") | (_, "/me") | (_, "/peers") | (_, "/status") | (_, "/health") => {
             Ok(Reply::error(405, "method not allowed"))
         }
         _ => Ok(Reply::error(404, "no such endpoint")),
@@ -201,6 +201,9 @@ fn send(store: &Store, request: &Request) -> Result<Reply> {
             400,
             format!("to has {c:?}; use letters, digits and . _ - @"),
         ));
+    }
+    if project.starts_with('-') {
+        return Ok(Reply::error(400, "project cannot start with -"));
     }
     if let Some(c) = api::first_invalid(&client_id, api::CLIENT_ID_CHARS) {
         return Ok(Reply::error(
@@ -253,6 +256,10 @@ fn send(store: &Store, request: &Request) -> Result<Reply> {
                 "{to:?} has {} unread messages; try again later",
                 api::MAX_PENDING
             ),
+        )),
+        InsertOutcome::Conflict(id) => Ok(Reply::error(
+            409,
+            format!("that client_id already belongs to message {id}; this is a different message"),
         )),
     }
 }

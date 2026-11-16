@@ -6,7 +6,7 @@
 use anyhow::{bail, Context, Result};
 use std::io::{Read, Write};
 use std::net::{TcpStream, ToSocketAddrs};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 const MAX_HEAD: usize = 16 * 1024;
 const MAX_RESPONSE: usize = 2 * 1024 * 1024;
@@ -50,7 +50,12 @@ impl From<std::io::Error> for ReadError {
 
 /// Read one request. Anything that is not a plain `Content-Length` request is
 /// refused: this server has no reason to accept chunked bodies or upgrades.
-pub fn read_request(stream: &mut TcpStream, max_body: usize) -> Result<Request, ReadError> {
+pub fn read_request(
+    stream: &mut TcpStream,
+    max_body: usize,
+    timeout: Duration,
+) -> Result<Request, ReadError> {
+    let deadline = Instant::now() + timeout;
     let mut buf = Vec::with_capacity(1024);
     let mut chunk = [0u8; 4096];
     let head_end = loop {
@@ -60,7 +65,7 @@ pub fn read_request(stream: &mut TcpStream, max_body: usize) -> Result<Request, 
         if buf.len() > MAX_HEAD {
             return Err(ReadError::Bad("request headers too large"));
         }
-        let n = stream.read(&mut chunk)?;
+        let n = read_chunk(stream, deadline, &mut chunk)?;
         if n == 0 {
             return Err(ReadError::Bad("connection closed before the request"));
         }
@@ -108,7 +113,7 @@ pub fn read_request(stream: &mut TcpStream, max_body: usize) -> Result<Request, 
 
     let mut body = buf[head_end..].to_vec();
     while body.len() < content_length {
-        let n = stream.read(&mut chunk)?;
+        let n = read_chunk(stream, deadline, &mut chunk)?;
         if n == 0 {
             return Err(ReadError::Bad("connection closed before the body"));
         }
@@ -127,6 +132,24 @@ pub fn read_request(stream: &mut TcpStream, max_body: usize) -> Result<Request, 
         headers: name_values,
         body,
     })
+}
+
+/// Reads with the whole request's deadline, not a fresh one per read: a
+/// client dripping a byte at a time cannot stretch a request forever.
+fn read_chunk(
+    stream: &mut TcpStream,
+    deadline: Instant,
+    buf: &mut [u8],
+) -> Result<usize, ReadError> {
+    let remaining = deadline.saturating_duration_since(Instant::now());
+    if remaining.is_zero() {
+        return Err(ReadError::Io(std::io::Error::new(
+            std::io::ErrorKind::TimedOut,
+            "the request took too long",
+        )));
+    }
+    stream.set_read_timeout(Some(remaining))?;
+    Ok(stream.read(buf)?)
 }
 
 fn split_query(target: &str) -> (String, Vec<(String, String)>) {

@@ -21,7 +21,7 @@ set -eu
 
 REPO="${STELE_REPO:-__alexander__/stele}"
 KEY="${STELE_SIGNING_KEY:-$HOME/.minisign/stele.key}"
-ROOT="$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)"
+ROOT="$(CDPATH='' cd -- "$(dirname "$0")/.." && pwd)"
 PUB="${STELE_PUB:-$ROOT/stele.pub}"
 TAG=""
 DRY_RUN=0
@@ -91,6 +91,9 @@ for f in $ASSETS; do
 done
 
 echo "Signing (minisign will ask for the key passphrase once)"
+# Word splitting is the point: minisign signs every asset in one call, so it
+# asks for the passphrase once.
+# shellcheck disable=SC2086
 ( cd "$TMP" && minisign -S -s "$KEY" -m $ASSETS ) || die "minisign failed"
 for f in $ASSETS; do
     [ -f "$TMP/$f.minisig" ] || die "$f was not signed"
@@ -112,7 +115,7 @@ fi
 
 echo "Uploading the signatures to the GitLab release"
 ( cd "$ROOT" && for f in $ASSETS; do
-    glab release upload "$TAG" "$TMP/$f.minisig" >/dev/null 2>&1 \
+    glab release upload -R "$REPO" "$TAG" "$TMP/$f.minisig" >/dev/null 2>&1 \
         || warn "$f.minisig may already be in the release; check it"
 done )
 ok "upload done"

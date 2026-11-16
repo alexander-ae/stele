@@ -27,7 +27,7 @@ request and holds none open.
 
 | | measured |
 |---|---|
-| binary, stripped | 2,888,816 bytes (2.89 MB) |
+| binary, stripped | 2,894,320 bytes (2.89 MB) |
 | RSS, `serve` idle | 5,716 KB, one thread |
 | RSS, `serve` after the read benchmark | 5,804 KB |
 | CPU, `serve` idle | 0 ticks over 10 s (`utime+stime` from `/proc`) |

@@ -2,7 +2,7 @@
 //! hashed), one of messages. Same pragmas as anathem: WAL and a busy timeout,
 //! so a backup or a second process does not turn into a lock error.
 
-use crate::api::{self, Message};
+use crate::api::{self, json_escaped_len, Message};
 use anyhow::{bail, Context, Result};
 use rusqlite::{params, Connection, OptionalExtension};
 use std::path::Path;
@@ -18,6 +18,8 @@ pub enum InsertOutcome {
     Duplicate(String),
     /// The recipient's pending queue is at the cap.
     Full,
+    /// The same `client_id` was used for a different message.
+    Conflict(String),
 }
 
 /// One message on its way into the store. A struct instead of eight
@@ -44,6 +46,7 @@ impl Store {
                 }
             }
         }
+        create_private(path)?;
         let conn =
             Connection::open(path).with_context(|| format!("cannot open {}", path.display()))?;
         restrict(path, 0o600)?;
@@ -159,18 +162,34 @@ impl Store {
             body,
             now,
         } = message;
-        if let Some(existing) = self
-            .conn
+        // One transaction because the duplicate check, the cap and the insert
+        // have to agree even when a second worker appears.
+        let tx = self.conn.unchecked_transaction()?;
+        if let Some((existing, existing_to, existing_project, existing_body)) = tx
             .query_row(
-                "select id from messages where from_box = ?1 and client_id = ?2",
+                "select id, to_box, project, body from messages
+                  where from_box = ?1 and client_id = ?2",
                 params![from, client_id],
-                |r| r.get::<_, String>(0),
+                |r| {
+                    Ok((
+                        r.get::<_, String>(0)?,
+                        r.get::<_, String>(1)?,
+                        r.get::<_, String>(2)?,
+                        r.get::<_, String>(3)?,
+                    ))
+                },
             )
             .optional()?
         {
-            return Ok(InsertOutcome::Duplicate(existing));
+            return Ok(
+                if existing_to == to && existing_project == project && existing_body == body {
+                    InsertOutcome::Duplicate(existing)
+                } else {
+                    InsertOutcome::Conflict(existing)
+                },
+            );
         }
-        let pending: i64 = self.conn.query_row(
+        let pending: i64 = tx.query_row(
             "select count(*) from messages
               where to_box = ?1 and delivered_at is null and expires_at > ?2",
             params![to, now],
@@ -179,7 +198,7 @@ impl Store {
         if pending >= api::MAX_PENDING {
             return Ok(InsertOutcome::Full);
         }
-        self.conn.execute(
+        tx.execute(
             "insert into messages
                (id, from_box, to_box, client_id, project, body, created_at, expires_at)
              values (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
@@ -194,6 +213,7 @@ impl Store {
                 now + api::TTL_SECS
             ],
         )?;
+        tx.commit()?;
         Ok(InsertOutcome::New(id.to_string()))
     }
 
@@ -304,18 +324,27 @@ impl Store {
     }
 }
 
-/// The size a string takes inside a JSON document, before the envelope.
-/// `serde_json` leaves non-ASCII characters alone, doubles quotes and
-/// backslashes, and writes control characters as `\u00XX`.
-fn json_escaped_len(value: &str) -> usize {
-    value
-        .chars()
-        .map(|c| match c {
-            '"' | '\\' => 2,
-            c if (c as u32) < 0x20 => 6,
-            c => c.len_utf8(),
-        })
-        .sum()
+/// SQLite creates the file with the process umask, which would leave the
+/// bodies readable for a moment before `restrict` runs. Creating it first
+/// with 0600 removes the window; an existing file is left to `restrict`.
+#[cfg(unix)]
+fn create_private(path: &Path) -> Result<()> {
+    use std::os::unix::fs::OpenOptionsExt;
+    match std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(0o600)
+        .open(path)
+    {
+        Ok(_) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => Ok(()),
+        Err(error) => Err(error).with_context(|| format!("cannot create {}", path.display())),
+    }
+}
+
+#[cfg(not(unix))]
+fn create_private(_path: &Path) -> Result<()> {
+    Ok(())
 }
 
 /// The mailbox holds message bodies in the clear: keep the file, and the
@@ -410,6 +439,22 @@ mod tests {
         assert!(matches!(a, InsertOutcome::New(_)));
         let b = add(&s, "m2", "laptop", "dell", "same", "api", "hello", 1001);
         assert!(matches!(b, InsertOutcome::Duplicate(ref id) if id == "m1"));
+        assert_eq!(s.count().unwrap(), 1);
+    }
+
+    #[test]
+    fn the_same_client_id_with_another_message_is_a_conflict() {
+        let (s, _d) = store();
+        add(&s, "m1", "laptop", "dell", "c1", "api", "hello", 1000);
+
+        let other_body = add(&s, "m2", "laptop", "dell", "c1", "api", "bye", 1001);
+        assert!(matches!(other_body, InsertOutcome::Conflict(ref id) if id == "m1"));
+
+        let other_recipient = add(&s, "m3", "laptop", "laptop", "c1", "api", "hello", 1001);
+        assert!(matches!(other_recipient, InsertOutcome::Conflict(ref id) if id == "m1"));
+
+        let retry = add(&s, "m4", "laptop", "dell", "c1", "api", "hello", 1001);
+        assert!(matches!(retry, InsertOutcome::Duplicate(ref id) if id == "m1"));
         assert_eq!(s.count().unwrap(), 1);
     }
 

@@ -9,10 +9,16 @@
 
 use crate::api::Message;
 use crate::client::Api;
+use crate::failure::{self, Kind};
 use crate::mem::Mem;
 use crate::time;
 use anyhow::{bail, Context, Result};
 use std::process::{Command, Stdio};
+use std::thread;
+use std::time::{Duration, Instant};
+
+/// A notifier that hangs must not hold the timer that runs `pull`.
+const NOTIFY_TIMEOUT: Duration = Duration::from_secs(30);
 
 pub struct Options {
     pub dry_run: bool,
@@ -90,6 +96,15 @@ pub fn run(api: &Api, options: &Options) -> Result<Summary> {
                     eprintln!("stele: {error:#}");
                     shown += 1;
                 }
+                // If the server is gone or asking for time, the next message
+                // will fail the same way; stop instead of waiting out the
+                // timeout once per message.
+                if matches!(
+                    failure::kind(&error),
+                    Some(Kind::Unreachable | Kind::Temporary)
+                ) {
+                    return Err(error);
+                }
             }
         }
     }
@@ -145,13 +160,27 @@ pub fn notify(
     if let Some(pending) = pending {
         child.env("STELE_PENDING", pending.to_string());
     }
-    let status = child
-        .status()
+    let mut child = child
+        .spawn()
         .with_context(|| format!("cannot run notify_cmd {command:?}"))?;
-    if !status.success() {
-        bail!("notify_cmd exited with {status}");
+    let deadline = Instant::now() + NOTIFY_TIMEOUT;
+    loop {
+        if let Some(status) = child.try_wait()? {
+            if !status.success() {
+                bail!("notify_cmd exited with {status}");
+            }
+            return Ok(());
+        }
+        if Instant::now() >= deadline {
+            let _ = child.kill();
+            let _ = child.wait();
+            bail!(
+                "notify_cmd did not finish within {} seconds",
+                NOTIFY_TIMEOUT.as_secs()
+            );
+        }
+        thread::sleep(Duration::from_millis(20));
     }
-    Ok(())
 }
 
 fn first_line(body: &str) -> String {

@@ -70,8 +70,31 @@ pub fn save(path: &Path, config: &ClientConfig) -> Result<()> {
             .with_context(|| format!("cannot create {}", parent.display()))?;
     }
     let body = serde_json::to_string_pretty(config)? + "\n";
-    fs::write(path, body).with_context(|| format!("cannot write {}", path.display()))?;
-    set_private(path)?;
+    write_private(path, &body)
+}
+
+/// Created with 0600 from the first byte: the token must never exist in a
+/// file another user can open, not even for the time of a `chmod`.
+fn write_private(path: &Path, body: &str) -> Result<()> {
+    #[cfg(unix)]
+    {
+        use std::io::Write;
+        use std::os::unix::fs::OpenOptionsExt;
+        let mut file = fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .mode(0o600)
+            .open(path)
+            .with_context(|| format!("cannot write {}", path.display()))?;
+        set_private(path)?;
+        file.write_all(body.as_bytes())
+            .with_context(|| format!("cannot write {}", path.display()))?;
+    }
+    #[cfg(not(unix))]
+    {
+        fs::write(path, body).with_context(|| format!("cannot write {}", path.display()))?;
+    }
     Ok(())
 }
 

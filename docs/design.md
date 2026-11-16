@@ -117,10 +117,13 @@ Limits, enforced on the server:
 
 - TTL of 7 days; expired rows are deleted on every write and every inbox read.
 - Body capped at 32 KB, project and mailbox names at 64 bytes. The HTTP request
-  cap is a separate 64 KB, so a body at the documented limit fits inside its
-  JSON envelope.
+  cap is six times the body plus 4 KB: JSON escaping turns a control character
+  into six bytes and a quote into two, so a body at the documented limit always
+  fits and the body check is the one that speaks.
 - 200 pending (unacknowledged) messages per recipient; a further send gets
   `429` instead of filling the disk.
+- A reused `client_id` with a different recipient, project or body is a `409`:
+  the original message is never silently replaced.
 - One inbox read returns at most ~1 MB of bodies. The client acknowledges what
   it receives, so a full mailbox drains in several pulls instead of producing a
   response the client would refuse to read.
