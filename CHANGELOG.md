@@ -1,6 +1,9 @@
 # Changelog
 
-## Unreleased
+## v0.2.1 — 2026-11-16
+
+The code review's fixes: a reused id can no longer drop a message, and a
+script can tell why a command failed.
 
 - `stele doctor` checks the config (and its mode), the server and token,
   `mem` (1.2 or newer), the drafts waiting and `stele-pull.timer`, with a hint
