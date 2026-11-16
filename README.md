@@ -4,7 +4,7 @@ A *stele* is a stone slab with an inscription, set upright where whoever comes
 next will find it. This one carries a message from one coding agent to another
 and leaves it in [anathem](https://gitlab.com/__alexander__/anathem) as a draft.
 
-**Status: v0.2.0, working.** One binary, one SQLite file, no async runtime.
+**Status: v0.2.1, working.** One binary, one SQLite file, no async runtime.
 
 The source, issues and merge requests live on
 [GitLab](https://gitlab.com/__alexander__/stele). The
@@ -42,7 +42,7 @@ It downloads the latest GitLab release, checks its `sha256` and installs it in
 curl -fsSL https://gitlab.com/__alexander__/stele/-/raw/main/scripts/install.sh | sh
 ```
 
-`--tag v0.2.0`, `--prefix <dir>`, `--build`, `--verify-signature` and
+`--tag v0.2.1`, `--prefix <dir>`, `--build`, `--verify-signature` and
 `--no-verify` are described in
 [`docs/installation.md`](docs/installation.md). Releases are signed with
 minisign.
