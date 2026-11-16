@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+- `stele doctor` checks the config (and its mode), the server and token,
+  `mem` (1.2 or newer), the drafts waiting and `stele-pull.timer`, with a hint
+  per failure; it reads and probes only, and exits 1 when a check fails.
+- Exit codes a script can act on: `2` when the server cannot be reached, `3`
+  when it answered and refused, `1` for local failures. Classified at the
+  transport boundary, not by matching messages.
+- `status --json` prints one document, with `local: null` when anathem cannot
+  answer instead of dropping the line.
+
 ## v0.2.0 — 2026-11-16
 
 A mailbox that says what it did: which deliveries wrote a draft, which were

@@ -254,13 +254,33 @@ Defaults for the server database: `$XDG_DATA_HOME/stele/stele.db`, then
 |---|---|
 | `login --url URL --token TOKEN\|-` | validates the token and writes the config. |
 | `whoami` | the mailbox this machine is. |
-| `status` | server, mailbox, unread on the server and drafts waiting locally. |
+| `status [--json]` | server, mailbox, unread on the server and drafts waiting locally. |
+| `doctor` | checks config, server, `mem`, drafts and the pull timer; exits 1 if any fails. |
 | `peers` | every mailbox the server knows. |
 | `send --to M --project P [BODY\|-]` | queues one message; retries a transport failure with the same id. |
 | `pull [--dry-run] [--limit N] [--mem PATH] [--mem-db PATH]` | fetches unread and writes drafts; default limit 50, max 200. |
 | `discard [--yes] ID` | acknowledges one pending message without a draft. |
 | `serve` | the mailbox. |
 | `token add\|rotate\|list\|remove` | mailbox and token management. |
+
+### Exit codes
+
+| code | meaning |
+|---|---|
+| `0` | it worked. |
+| `1` | a local failure: arguments, the config, files, anathem. |
+| `2` | the server could not be reached: name resolution, connect or read failed. |
+| `3` | the server answered and refused it (`401`, `404`, `413`, `429`, `5xx`). |
+
+A timer can retry on `2` and give up on `3`; the HTTP detail stays on stderr.
+`status --json` is one document, never prose:
+
+```json
+{"local":3,"mailbox":"dell","server":"100.95.129.72:3900","unread":2}
+```
+
+`local` is `null` when anathem cannot answer, which is the one case where the
+prose version drops the line.
 
 ### Fixed limits
 

@@ -8,6 +8,8 @@ pub mod api;
 pub mod cli;
 pub mod client;
 pub mod config;
+pub mod doctor;
+pub mod failure;
 pub mod http;
 pub mod mem;
 pub mod pull;

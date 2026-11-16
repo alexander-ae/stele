@@ -127,6 +127,9 @@ if [ "${1:-}" = "--db" ]; then shift 2; fi
 cmd="${1:-}"
 marker='__FAIL_ON__'
 case "$cmd" in
+  --version)
+    printf 'mem 1.2.0 (fake)\n'
+    ;;
   save)
     body=$(cat)
     if [ -n "$marker" ] && printf '%s' "$body" | grep -q "$marker"; then
@@ -193,6 +196,30 @@ fn set_mem_bin(config: &Path, bin: &Path) {
     let mut value: serde_json::Value = serde_json::from_str(&text).unwrap();
     value["mem_bin"] = serde_json::json!(bin.to_str().unwrap());
     std::fs::write(config, serde_json::to_string_pretty(&value).unwrap()).unwrap();
+}
+
+fn set_token(config: &Path, token: &str) {
+    let text = std::fs::read_to_string(config).unwrap();
+    let mut value: serde_json::Value = serde_json::from_str(&text).unwrap();
+    value["token"] = serde_json::json!(token);
+    std::fs::write(config, serde_json::to_string_pretty(&value).unwrap()).unwrap();
+}
+
+/// A `mem` that answers `--version` and refuses everything else, for the
+/// checks doctor makes before it trusts the rest.
+fn fake_mem_version(dir: &Path, name: &str, version: &str) -> PathBuf {
+    let path = dir.join(name);
+    std::fs::write(
+        &path,
+        format!("#!/bin/sh\nif [ \"${{1:-}}\" = \"--version\" ]; then echo 'mem {version}'; exit 0; fi\nexit 1\n"),
+    )
+    .unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    path
 }
 
 #[test]
@@ -951,4 +978,137 @@ fn pull_tells_a_new_draft_from_a_retry() {
     assert!(second.contains("already here"), "{second}");
     assert!(!second.contains("draft "), "{second}");
     assert!(second.contains("(memory 1)"), "{second}");
+}
+
+#[test]
+fn exit_codes_separate_unreachable_from_refused() {
+    let dir = tempdir();
+    let db = dir.path().join("stele.db");
+    let dell_token = token(&db, "dell");
+    let server = start(&db);
+    let dell = login(&server, dir.path(), "dell", &dell_token);
+
+    let out = stele(&["--config", dell.config.to_str().unwrap(), "status"], &[]);
+    assert_eq!(out.status.code(), Some(0));
+
+    // The server is there and says no: retrying the same token will not help.
+    set_token(&dell.config, "not-a-token");
+    let out = stele(&["--config", dell.config.to_str().unwrap(), "status"], &[]);
+    assert_eq!(
+        out.status.code(),
+        Some(3),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    // The server is gone: try again later.
+    set_token(&dell.config, &dell_token);
+    let config = dell.config.clone();
+    drop(server);
+    let out = stele(&["--config", config.to_str().unwrap(), "status"], &[]);
+    assert_eq!(
+        out.status.code(),
+        Some(2),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
+
+#[test]
+fn status_json_is_one_document_and_says_when_local_is_unknown() {
+    let dir = tempdir();
+    let db = dir.path().join("stele.db");
+    let dell_token = token(&db, "dell");
+    let server = start(&db);
+    let dell = login(&server, dir.path(), "dell", &dell_token);
+    let mem = fake_mem(dir.path());
+    set_mem_bin(&dell.config, &mem);
+    let log = dir.path().join("mem.log");
+    ok(send(&dell, "dell", "api", "hello"));
+    std::fs::write(dir.path().join("mem.log.drafts"), "2\n").unwrap();
+
+    let text = ok(stele(
+        &[
+            "--config",
+            dell.config.to_str().unwrap(),
+            "status",
+            "--json",
+        ],
+        &[("MEM_LOG", &log)],
+    ));
+    let document: serde_json::Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(document["mailbox"], "dell");
+    assert_eq!(document["unread"], 1);
+    assert_eq!(document["local"], 2);
+    assert!(
+        document["server"].as_str().unwrap().contains("127.0.0.1"),
+        "{text}"
+    );
+
+    // anathem cannot answer: the field is null, not a missing line.
+    set_mem_bin(&dell.config, Path::new("/nonexistent/stele-mem"));
+    let text = ok(stele(
+        &[
+            "--config",
+            dell.config.to_str().unwrap(),
+            "status",
+            "--json",
+        ],
+        &[],
+    ));
+    let document: serde_json::Value = serde_json::from_str(&text).unwrap();
+    assert!(document["local"].is_null(), "{text}");
+}
+
+#[test]
+fn doctor_reports_a_healthy_mailbox() {
+    let dir = tempdir();
+    let db = dir.path().join("stele.db");
+    let dell_token = token(&db, "dell");
+    let server = start(&db);
+    let dell = login(&server, dir.path(), "dell", &dell_token);
+    let mem = fake_mem(dir.path());
+    set_mem_bin(&dell.config, &mem);
+    let log = dir.path().join("mem.log");
+
+    let stdout = ok(stele(
+        &["--config", dell.config.to_str().unwrap(), "doctor"],
+        &[("MEM_LOG", &log)],
+    ));
+    for expected in ["config", "server", "mem", "1.2.0", "drafts", "0 waiting"] {
+        assert!(stdout.contains(expected), "{stdout}");
+    }
+    assert!(!stdout.contains("fail"), "{stdout}");
+}
+
+#[test]
+fn doctor_fails_without_a_config_and_says_what_to_run() {
+    let dir = tempdir();
+    let missing = dir.path().join("no-such-config.json");
+    let out = stele(&["--config", missing.to_str().unwrap(), "doctor"], &[]);
+    assert_eq!(out.status.code(), Some(1));
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("config"), "{stdout}");
+    assert!(stdout.contains("stele login"), "{stdout}");
+}
+
+#[test]
+fn doctor_refuses_an_old_mem_and_skips_the_rest_of_anathem() {
+    let dir = tempdir();
+    let db = dir.path().join("stele.db");
+    let dell_token = token(&db, "dell");
+    let server = start(&db);
+    let dell = login(&server, dir.path(), "dell", &dell_token);
+    let old = fake_mem_version(dir.path(), "mem-old", "1.1.0");
+    set_mem_bin(&dell.config, &old);
+
+    let out = stele(&["--config", dell.config.to_str().unwrap(), "doctor"], &[]);
+    assert_eq!(out.status.code(), Some(1));
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("1.1.0"), "{stdout}");
+    assert!(stdout.contains("1.2.0"), "{stdout}");
+    assert!(
+        !stdout.contains("drafts"),
+        "a mem that is too old should not be asked for drafts: {stdout}"
+    );
 }

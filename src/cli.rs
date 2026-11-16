@@ -51,6 +51,7 @@ pub fn run() -> Result<()> {
         "whoami" => whoami(&mut parser, config_path),
         "peers" => peers(&mut parser, config_path),
         "status" => status(&mut parser, config_path),
+        "doctor" => doctor_command(&mut parser, config_path),
         "send" => send(&mut parser, config_path),
         "pull" => pull_command(&mut parser, config_path),
         "discard" => discard(&mut parser, config_path),
@@ -67,7 +68,8 @@ usage:
   stele [--config PATH] login --url URL --token TOKEN|-
   stele [--config PATH] whoami
   stele [--config PATH] peers
-  stele [--config PATH] status
+  stele [--config PATH] status [--json]
+  stele [--config PATH] doctor
   stele [--config PATH] send --to MAILBOX --project PROJECT [BODY|-]
   stele [--config PATH] pull [--dry-run] [--limit N] [--mem PATH] [--mem-db PATH]
   stele [--config PATH] discard [--yes] ID
@@ -79,6 +81,7 @@ Commands:
   whoami   prints the mailbox this machine is
   peers    lists the mailboxes the server knows
   status   server, mailbox and how many messages are waiting
+  doctor   checks the config, the server, anathem and the pull timer
   send     queues one message; the body may come from stdin (`-`)
   pull     fetches unread messages and writes each as an anathem draft
   discard  acknowledges one message without writing a draft (asks first)
@@ -87,7 +90,9 @@ Commands:
 
 Environment:
   STELE_CONFIG   where the client config lives (default ~/.config/stele/config.json)
-  STELE_DB       the server database (default ~/.local/share/stele/stele.db)",
+  STELE_DB       the server database (default ~/.local/share/stele/stele.db)
+
+Exit codes: 0 ok, 1 local failure, 2 server unreachable, 3 server refused.",
         env!("CARGO_PKG_VERSION")
     );
 }
@@ -219,18 +224,46 @@ fn peers(parser: &mut lexopt::Parser, config_path: Option<PathBuf>) -> Result<()
 }
 
 fn status(parser: &mut lexopt::Parser, config_path: Option<PathBuf>) -> Result<()> {
-    no_arguments(parser)?;
+    let mut json = false;
+    while let Some(arg) = parser.next()? {
+        match arg {
+            Long("json") => json = true,
+            _ => return Err(arg.unexpected().into()),
+        }
+    }
     let config = load_config(config_path)?;
     let mem = Mem::new(config.mem_bin.clone(), config.mem_db.clone());
     let api = Api::new(&config.url, config.token)?;
     let status = api.status()?;
+    // The local side is optional: a mailbox that only sends still has a
+    // useful status when anathem is missing.
+    let local = mem.drafts_waiting().ok();
+    if json {
+        let document = serde_json::json!({
+            "server": api.endpoint.authority,
+            "mailbox": &status.mailbox,
+            "unread": status.pending,
+            "local": local,
+        });
+        println!("{}", serde_json::to_string(&document)?);
+        return Ok(());
+    }
     println!("server:  {}", api.endpoint.authority);
     println!("mailbox: {}", status.mailbox);
     println!("unread:  {}", status.pending);
-    // The local side is optional: a mailbox that only sends still has a
-    // useful status when anathem is missing.
-    if let Ok(local) = mem.drafts_waiting() {
+    if let Some(local) = local {
         println!("local:   {local} drafts waiting");
+    }
+    Ok(())
+}
+
+/// Every check reports itself; the summary line is the exit code's job. A
+/// warning (a readable-by-others config, a stopped timer) is not a failure.
+fn doctor_command(parser: &mut lexopt::Parser, config_path: Option<PathBuf>) -> Result<()> {
+    no_arguments(parser)?;
+    let failures = crate::doctor::run(config_path)?;
+    if failures > 0 {
+        bail!("{failures} check(s) failed");
     }
     Ok(())
 }
