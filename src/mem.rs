@@ -14,6 +14,7 @@ pub const MIN_VERSION: &str = "1.2.0";
 
 const SAVE_TIMEOUT: Duration = Duration::from_secs(10);
 const RECENT_TIMEOUT: Duration = Duration::from_secs(3);
+const VERSION_TIMEOUT: Duration = Duration::from_secs(3);
 
 pub struct Mem {
     bin: String,
@@ -88,6 +89,26 @@ impl Mem {
             delivery_from: saved.delivery_from,
             when: saved.when,
         })
+    }
+
+    /// The first line of `mem --version`. `--db` is deliberately not passed:
+    /// the question is which binary will run, not which database it reads.
+    pub fn version(&self) -> Result<String> {
+        let mut command = Command::new(&self.bin);
+        command.arg("--version");
+        let output = run(command, None, VERSION_TIMEOUT)?;
+        if !output.status.success() {
+            bail!(
+                "mem --version failed: {}",
+                String::from_utf8_lossy(&output.stderr).trim()
+            );
+        }
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let line = stdout.lines().next().unwrap_or("").trim().to_string();
+        if line.is_empty() {
+            bail!("mem --version printed nothing");
+        }
+        Ok(line)
     }
 
     /// How many received memories are still drafts, anywhere in the database.
@@ -219,6 +240,26 @@ fn old_mem(stderr: &str) -> bool {
     text.contains("--json") && (text.contains("unexpected") || text.contains("unrecognized"))
 }
 
+/// Whether the `mem --version` line is at least `minimum`. A version that
+/// cannot be read counts as too old: doctor reports that instead of guessing.
+pub fn at_least(version_line: &str, minimum: &str) -> bool {
+    match (parse_version(version_line), parse_version(minimum)) {
+        (Some(found), Some(required)) => found >= required,
+        _ => false,
+    }
+}
+
+fn parse_version(text: &str) -> Option<(u64, u64, u64)> {
+    let token = text
+        .split_whitespace()
+        .find(|word| word.starts_with(|c: char| c.is_ascii_digit()))?;
+    let mut parts = token.split('.');
+    let major = parts.next()?.parse().ok()?;
+    let minor = parts.next().unwrap_or("0").parse().ok()?;
+    let patch = parts.next().and_then(|part| part.parse().ok()).unwrap_or(0);
+    Some((major, minor, patch))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -232,5 +273,14 @@ mod tests {
     fn an_old_mem_is_recognised_by_the_json_error() {
         assert!(old_mem("error: unexpected argument '--json' found"));
         assert!(!old_mem("error: there is no database"));
+    }
+
+    #[test]
+    fn versions_are_compared_as_numbers() {
+        assert!(at_least("mem 1.2.0 (commit beaf83f)", "1.2.0"));
+        assert!(at_least("mem 1.10.0", "1.2.0"));
+        assert!(at_least("mem 2.0", "1.12.9"));
+        assert!(!at_least("mem 1.1.9", "1.2.0"));
+        assert!(!at_least("not a version", "1.2.0"));
     }
 }

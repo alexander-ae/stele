@@ -4,6 +4,7 @@ use crate::api::{
     ErrorResponse, MeResponse, Message, MessagesResponse, PeersResponse, SendRequest, SendResponse,
     StatusResponse,
 };
+use crate::failure::Failure;
 use crate::http::{self, Endpoint};
 use anyhow::{bail, Context, Result};
 use serde::de::DeserializeOwned;
@@ -32,7 +33,7 @@ impl Api {
 
     fn call(&self, method: &str, path: &str, body: Option<&[u8]>) -> Result<(u16, Vec<u8>)> {
         http::call(&self.endpoint, method, path, Some(&self.token), body)
-            .with_context(|| format!("talking to {}", self.endpoint.authority))
+            .map_err(|error| Failure::unreachable(format!("{error:#}")).into())
     }
 
     fn json<T: DeserializeOwned>(
@@ -43,7 +44,7 @@ impl Api {
     ) -> Result<T> {
         let (status, raw) = self.call(method, path, body)?;
         if !(200..300).contains(&status) {
-            bail!(describe_error(status, &raw));
+            return Err(Failure::refused(describe_error(status, &raw)).into());
         }
         serde_json::from_slice(&raw).with_context(|| {
             format!("the server answered HTTP {status} with something that is not JSON")
@@ -77,7 +78,7 @@ impl Api {
             self.call("POST", "/messages", Some(&body))
         })?;
         if !(200..300).contains(&status) {
-            bail!(describe_error(status, &raw));
+            return Err(Failure::refused(describe_error(status, &raw)).into());
         }
         serde_json::from_slice(&raw).with_context(|| {
             format!("the server answered HTTP {status} with something that is not JSON")
@@ -93,7 +94,7 @@ impl Api {
     pub fn ack(&self, id: &str) -> Result<()> {
         let (status, raw) = self.call("POST", &format!("/messages/{id}/ack"), Some(b""))?;
         if !(200..300).contains(&status) {
-            bail!(describe_error(status, &raw));
+            return Err(Failure::refused(describe_error(status, &raw)).into());
         }
         Ok(())
     }
@@ -103,7 +104,7 @@ impl Api {
     pub fn discard(&self, id: &str) -> Result<()> {
         let (status, raw) = self.call("POST", &format!("/messages/{id}/discard"), Some(b""))?;
         if !(200..300).contains(&status) {
-            bail!(describe_error(status, &raw));
+            return Err(Failure::refused(describe_error(status, &raw)).into());
         }
         Ok(())
     }

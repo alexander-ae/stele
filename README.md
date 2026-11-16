@@ -148,12 +148,21 @@ stele send --to dell --project api "The contract changed to v2"
 printf 'the whole note\n' | stele send --to dell --project api -
 stele peers
 stele status
+stele status --json
+stele doctor
 stele pull --dry-run
 stele pull
 stele discard --yes 42
 mem recent --all --external
 mem accept 42
 ```
+
+`doctor` checks the config, the server and its token, `mem` (1.2 or newer),
+the drafts waiting and the pull timer, and exits 1 if something is broken.
+It never changes anything.
+
+`status --json` prints `{"server":…,"mailbox":…,"unread":…,"local":…}`, with
+`local` null when anathem cannot answer.
 
 `discard` acknowledges one message **without writing a draft**; it asks first
 unless `--yes`. Use it only for a note anathem keeps refusing: the row stays
