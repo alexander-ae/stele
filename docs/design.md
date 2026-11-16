@@ -181,7 +181,7 @@ running. Measured on the Dell (Ubuntu 26.04, 4 cores), release build with
 
 | | target | measured |
 |---|---|---|
-| binary | 2.5–3 MB | 2.86 MB |
+| binary | 2.5–3 MB | 2.89 MB |
 | RSS, idle | ~6 MB | 5.7 MB, one thread |
 | CPU, idle | 0% | 0 ticks over 10 s |
 | local latency | < 1 ms | send p50 0.24 ms, p99 0.82 ms; ack p50 0.15 ms |
