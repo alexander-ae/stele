@@ -307,6 +307,29 @@ do not control, wrap the port (VPN, tailnet, SSH) instead of exposing it.
   delete the binary, `~/.config/stele/` and, if you want, the server database.
   The anathem drafts are unaffected.
 
+## Cutting a release
+
+```bash
+# 1. the version and its notes
+$EDITOR Cargo.toml CHANGELOG.md      # Unreleased -> vX.Y.Z, same number
+git commit -am "chore(release): X.Y.Z"
+git tag -a vX.Y.Z -m "vX.Y.Z"
+git push origin main vX.Y.Z          # the mirror carries the tag to GitHub
+
+# 2. GitHub Actions -> binaries -> Run workflow, tag vX.Y.Z
+
+# 3. the artifacts, their hashes and the GitLab release
+sh scripts/publish-binaries.sh vX.Y.Z
+
+# 4. the signature; the passphrase is typed here, never in CI
+sh scripts/sign-release.sh vX.Y.Z
+```
+
+Step 2 is a person pressing a button: GitHub only compiles, and no GitLab
+credential is stored there. Step 4 is a person too, because a key in CI would
+sign whatever the pipeline built. `publish-binaries.sh --dry-run` and
+`sign-release.sh --dry-run` show what would be uploaded.
+
 ## Troubleshooting
 
 | symptom | cause and fix |

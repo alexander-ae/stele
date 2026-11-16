@@ -1,6 +1,9 @@
 # Changelog
 
-## Unreleased
+## v0.2.0 — 2026-11-16
+
+A mailbox that says what it did: which deliveries wrote a draft, which were
+retries, and how many drafts are still waiting locally.
 
 - `pull` reads `mem save --json`: it reports a new draft separately from an
   `--ext-id` that was already here, and the notifier gets `STELE_DRAFTS` (new),
