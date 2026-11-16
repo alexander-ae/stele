@@ -41,7 +41,7 @@ latest GitLab release, checks its `.sha256`, and installs the binary in
 
 | flag | meaning |
 |---|---|
-| `--tag v0.1.0` | install that release instead of the latest. |
+| `--tag v0.2.0` | install that release instead of the latest. |
 | `--prefix <dir>` | install somewhere other than `~/.local/bin`. |
 | `--build` | compile from source instead of downloading. |
 | `--verify-signature` | check the minisign signature (needs `minisign`). |
