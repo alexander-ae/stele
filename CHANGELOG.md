@@ -6,10 +6,27 @@
   `mem` (1.2 or newer), the drafts waiting and `stele-pull.timer`, with a hint
   per failure; it reads and probes only, and exits 1 when a check fails.
 - Exit codes a script can act on: `2` when the server cannot be reached, `3`
-  when it answered and refused, `1` for local failures. Classified at the
-  transport boundary, not by matching messages.
+  when it answered and refused, `4` when it asked to try again later, `1` for
+  local failures. Classified at the transport boundary, not by matching
+  messages.
 - `status --json` prints one document, with `local: null` when anathem cannot
   answer instead of dropping the line.
+- A reused `client_id` for another message is now a `409`; before, the new
+  message was silently dropped while the sender was told it had been queued.
+- The request cap is sized from the worst-case JSON escaping, so a 32 KB body
+  always fits; `send` refuses an oversized body before it hits the wire.
+- A request now has one deadline for all of its reads: a client dripping a
+  byte at a time cannot hold the single-threaded server open indefinitely.
+- `stele login` keeps `mem_bin`, `mem_db` and `notify_cmd`; rotating a token
+  no longer wipes the notifier.
+- `pull` stops at the first unreachable or temporary failure instead of
+  waiting out a timeout once per message, and keeps the exit code.
+- The notifier has a 30 s deadline; `doctor` probes systemd with a timeout.
+- The client config and a new database are created `0600`, not tightened
+  after writing.
+- `token add|rotate|remove` reject extra arguments; cancelling `discard` exits
+  0; a project cannot start with `-`; `sign-release.sh` uploads with `-R`;
+  `install.sh --build --tag` is an error rather than a silent no-op.
 
 ## v0.2.0 — 2026-11-16
 

@@ -5,10 +5,11 @@ use serde::{Deserialize, Serialize};
 /// A message body is capped so one agent in a loop cannot fill the disk.
 pub const MAX_BODY: usize = 32 * 1024;
 
-/// The HTTP request carries the body inside a JSON envelope, so the socket
-/// has to accept a little more than the message itself. Keeping them apart is
-/// what makes `MAX_BODY` a limit a caller can actually reach.
-pub const MAX_REQUEST: usize = 64 * 1024;
+/// The HTTP request carries the body inside a JSON envelope, and `serde_json`
+/// expands `"` and `\` to two bytes and a control character to six. The
+/// request cap is therefore sized from the worst case, so a body at
+/// `MAX_BODY` always fits and the body check stays the one that speaks.
+pub const MAX_REQUEST: usize = MAX_BODY * 6 + 4 * 1024;
 
 /// One inbox read returns at most this many bytes of bodies. The client
 /// acknowledges what it receives, so a full mailbox drains in several pulls
@@ -36,6 +37,20 @@ pub const CLIENT_ID_CHARS: &str =
 
 pub fn first_invalid(value: &str, allowed: &str) -> Option<char> {
     value.chars().find(|c| !allowed.contains(*c))
+}
+
+/// The size a string takes inside a JSON document, before the envelope.
+/// `serde_json` leaves non-ASCII characters alone, doubles quotes and
+/// backslashes, and writes control characters as `\u00XX`.
+pub fn json_escaped_len(value: &str) -> usize {
+    value
+        .chars()
+        .map(|c| match c {
+            '"' | '\\' => 2,
+            c if (c as u32) < 0x20 => 6,
+            c => c.len_utf8(),
+        })
+        .sum()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -11,7 +11,12 @@ use crate::mem::{at_least, Mem, MIN_VERSION};
 use anyhow::Result;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
+use std::thread;
+use std::time::{Duration, Instant};
+
+/// Probing a service manager should not become the hang it is meant to find.
+const PROBE_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// Runs every check and returns how many failed. Warnings do not count: a
 /// world-readable config or a stopped timer is worth saying, not failing.
@@ -84,7 +89,11 @@ fn check_config(path: &Path, failures: &mut usize) -> Option<ClientConfig> {
             );
             hint(&format!("chmod 600 {}", path.display()));
         }
-        Some(_) => row("config", "ok", &format!("{} (0600)", path.display())),
+        Some(mode) => row(
+            "config",
+            "ok",
+            &format!("{} (mode {:o})", path.display(), mode & 0o777),
+        ),
         None => row("config", "ok", &format!("{}", path.display())),
     }
     Some(config)
@@ -116,6 +125,9 @@ fn check_server(config: &ClientConfig, failures: &mut usize) {
                     hint("check the address and that `stele serve` runs on the other machine")
                 }
                 Some(Kind::Refused) => hint("the token is not accepted; run `stele login` again"),
+                Some(Kind::Temporary) => {
+                    hint("the server asked to try again later; check its logs")
+                }
                 None => hint("see the message above"),
             }
             *failures += 1;
@@ -161,12 +173,9 @@ fn check_drafts(mem: &Mem, failures: &mut usize) {
 /// Best effort: the unit belongs to a deployment, not to the protocol. A
 /// machine without systemd, or one that pulls from cron, is not broken.
 fn check_timer() {
-    let present = Command::new("systemctl")
-        .args(["--user", "cat", "stele-pull.timer"])
-        .output()
-        .map(|output| output.status.success())
-        .unwrap_or(false);
-    if !present {
+    let mut cat = Command::new("systemctl");
+    cat.args(["--user", "cat", "stele-pull.timer"]);
+    if !succeeds_within(cat, PROBE_TIMEOUT) {
         row(
             "timer",
             "skip",
@@ -174,11 +183,9 @@ fn check_timer() {
         );
         return;
     }
-    let active = Command::new("systemctl")
-        .args(["--user", "is-active", "stele-pull.timer"])
-        .output()
-        .map(|output| output.status.success())
-        .unwrap_or(false);
+    let mut is_active = Command::new("systemctl");
+    is_active.args(["--user", "is-active", "stele-pull.timer"]);
+    let active = succeeds_within(is_active, PROBE_TIMEOUT);
     if active {
         row("timer", "ok", "stele-pull.timer active");
     } else {
@@ -188,6 +195,26 @@ fn check_timer() {
             "stele-pull.timer is not running; mail waits until somebody pulls",
         );
         hint("systemctl --user start stele-pull.timer");
+    }
+}
+
+fn succeeds_within(mut command: Command, timeout: Duration) -> bool {
+    let Ok(mut child) = command.stdout(Stdio::null()).stderr(Stdio::null()).spawn() else {
+        return false;
+    };
+    let deadline = Instant::now() + timeout;
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => return status.success(),
+            Ok(None) => {}
+            Err(_) => return false,
+        }
+        if Instant::now() >= deadline {
+            let _ = child.kill();
+            let _ = child.wait();
+            return false;
+        }
+        thread::sleep(Duration::from_millis(20));
     }
 }
 

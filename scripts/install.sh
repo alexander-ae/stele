@@ -54,6 +54,10 @@ while [ $# -gt 0 ]; do
     esac
 done
 
+if [ "$BUILD" -eq 1 ] && [ "$TAG" != "latest" ]; then
+    die "--build compiles the current checkout; --tag only applies to downloads"
+fi
+
 if [ "$BUILD" -eq 1 ]; then
     # rustup may have been installed with --no-modify-path; the binary is
     # there even when the shell does not know it.

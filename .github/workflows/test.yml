@@ -21,6 +21,7 @@ jobs:
       - run: rustup component add rustfmt clippy
       - run: cargo fmt --check
       - run: cargo clippy --all-targets -- -D warnings
+      - run: shellcheck scripts/*.sh
 
   test:
     name: test ${{ matrix.name }}

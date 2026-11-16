@@ -270,9 +270,12 @@ Defaults for the server database: `$XDG_DATA_HOME/stele/stele.db`, then
 | `0` | it worked. |
 | `1` | a local failure: arguments, the config, files, anathem. |
 | `2` | the server could not be reached: name resolution, connect or read failed. |
-| `3` | the server answered and refused it (`401`, `404`, `413`, `429`, `5xx`). |
+| `3` | the server answered and refused it (`401`, `404`, `409`, `413`); retrying changes nothing. |
+| `4` | the server asked to try again later (`429`, `5xx`). |
 
-A timer can retry on `2` and give up on `3`; the HTTP detail stays on stderr.
+A timer can retry on `2` and `4` and give up on `3`; the HTTP detail stays on
+stderr.
+
 `status --json` is one document, never prose:
 
 ```json
@@ -290,7 +293,7 @@ stay small and predictable.
 | limit | value |
 |---|---|
 | message body | 32 KB |
-| HTTP request (JSON envelope included) | 64 KB |
+| HTTP request (JSON envelope included) | 200 KB, six times the body plus 4 KB for escaping |
 | unacknowledged messages per recipient | 200 |
 | message lifetime | 7 days |
 | one inbox read | about 1 MB of bodies |
@@ -298,7 +301,7 @@ stay small and predictable.
 
 Names: mailbox allows letters, digits and `. _ - @`; `client_id` adds `:`.
 Project names follow anathem — any non-empty string without control
-characters. A value outside a charset is a `400`.
+characters that does not start with `-`. A value outside a charset is a `400`.
 
 ## Transport
 
@@ -355,7 +358,7 @@ sign whatever the pipeline built. `publish-binaries.sh --dry-run` and
 | symptom | cause and fix |
 |---|---|
 | `HTTP 401` | wrong or rotated token: `stele login` again. |
-| `HTTP 413` | body over 32 KB (the JSON envelope makes the request slightly larger; the request cap is 64 KB). |
+| `HTTP 413` | body over 32 KB. `stele send` refuses it before sending; the request cap is sized so the body limit always arrives first. |
 | `HTTP 429` | the recipient has 200 unread: `stele status`, then `pull` or `discard`. |
 | `there is no mailbox "x"` | `stele --db … token add x` on the server, or `stele peers`. |
 | `cannot run "mem"` | `mem` is not on `PATH`; set `mem_bin` or fix the unit's `PATH`. |

@@ -1,3 +1,5 @@
+#![forbid(unsafe_code)]
+
 fn main() {
     if let Err(error) = stele::cli::run() {
         eprintln!("stele: {error:#}");

@@ -11,8 +11,10 @@ use std::fmt;
 pub enum Kind {
     /// Name resolution, connect or read failed; no HTTP answer was read.
     Unreachable,
-    /// An HTTP answer arrived and it was not a success.
+    /// An HTTP answer arrived and it will not change by retrying.
     Refused,
+    /// The server asked to be tried again later (`429`, `5xx`).
+    Temporary,
 }
 
 impl Kind {
@@ -20,6 +22,7 @@ impl Kind {
         match self {
             Kind::Unreachable => 2,
             Kind::Refused => 3,
+            Kind::Temporary => 4,
         }
     }
 }
@@ -33,6 +36,10 @@ pub struct Failure {
 }
 
 impl Failure {
+    pub fn kind(&self) -> Kind {
+        self.kind
+    }
+
     pub fn unreachable(detail: impl Into<String>) -> Self {
         Self {
             kind: Kind::Unreachable,
@@ -43,6 +50,13 @@ impl Failure {
     pub fn refused(detail: impl Into<String>) -> Self {
         Self {
             kind: Kind::Refused,
+            detail: detail.into(),
+        }
+    }
+
+    pub fn temporary(detail: impl Into<String>) -> Self {
+        Self {
+            kind: Kind::Temporary,
             detail: detail.into(),
         }
     }
@@ -95,5 +109,8 @@ mod tests {
             .context("message 42 stays unread")
             .unwrap_err();
         assert_eq!(exit_code(&error), 3);
+
+        let error: anyhow::Error = Failure::temporary("HTTP 503").into();
+        assert_eq!(exit_code(&error), 4);
     }
 }

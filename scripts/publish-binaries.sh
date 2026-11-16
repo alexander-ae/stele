@@ -16,7 +16,7 @@ set -eu
 
 REPO="${STELE_GITHUB_REPO:-alexander-ae/stele}"
 GL_REPO="${STELE_REPO:-__alexander__/stele}"
-ROOT="$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)"
+ROOT="$(CDPATH='' cd -- "$(dirname "$0")/.." && pwd)"
 TAG=""
 RUN=""
 DRY_RUN=0

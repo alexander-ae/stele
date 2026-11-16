@@ -82,7 +82,7 @@ Commands:
   peers    lists the mailboxes the server knows
   status   server, mailbox and how many messages are waiting
   doctor   checks the config, the server, anathem and the pull timer
-  send     queues one message; the body may come from stdin (`-`)
+  send     queues one message; the body may come from stdin (`-`) or follow `--`
   pull     fetches unread messages and writes each as an anathem draft
   discard  acknowledges one message without writing a draft (asks first)
   serve    runs the mailbox; it listens on plain HTTP and is meant for a private network
@@ -92,7 +92,8 @@ Environment:
   STELE_CONFIG   where the client config lives (default ~/.config/stele/config.json)
   STELE_DB       the server database (default ~/.local/share/stele/stele.db)
 
-Exit codes: 0 ok, 1 local failure, 2 server unreachable, 3 server refused.",
+Exit codes: 0 ok, 1 local failure, 2 server unreachable, 3 server refused,
+            4 the server asked to try again later.",
         env!("CARGO_PKG_VERSION")
     );
 }
@@ -135,9 +136,10 @@ fn token(parser: &mut lexopt::Parser, db: Option<PathBuf>) -> Result<()> {
             }
         }
         "add" | "rotate" => {
-            let name = values
-                .get(1)
-                .context("which mailbox? `stele token add <name>`")?;
+            if values.len() != 2 {
+                bail!("`stele token {action}` takes exactly one mailbox name");
+            }
+            let name = &values[1];
             check_mailbox(name)?;
             let token = random_hex(32)?;
             let hash = sha256_hex(&token);
@@ -159,9 +161,10 @@ fn token(parser: &mut lexopt::Parser, db: Option<PathBuf>) -> Result<()> {
             );
         }
         "remove" => {
-            let name = values
-                .get(1)
-                .context("which mailbox? `stele token remove <name>`")?;
+            if values.len() != 2 {
+                bail!("`stele token remove` takes exactly one mailbox name");
+            }
+            let name = &values[1];
             if store.remove_mailbox(name)? {
                 println!("removed {name:?}");
             } else {
@@ -196,7 +199,14 @@ fn login(parser: &mut lexopt::Parser, config_path: Option<PathBuf>) -> Result<()
     let api = Api::new(&url, token.clone())?;
     let me = api.me()?;
     let path = config_path.unwrap_or(config::default_path()?);
-    config::save(&path, &ClientConfig::new(url, me.mailbox.clone(), token))?;
+    // Keep mem_bin, mem_db, notify_cmd and anything added later: rotating a
+    // token should not cost the operator their notifier.
+    let mut config = config::load(&path)
+        .unwrap_or_else(|_| ClientConfig::new(url.clone(), me.mailbox.clone(), token.clone()));
+    config.url = url;
+    config.mailbox = me.mailbox.clone();
+    config.token = token;
+    config::save(&path, &config)?;
     println!(
         "logged in as {:?} at {}",
         me.mailbox, api.endpoint.authority
@@ -304,6 +314,13 @@ fn send(parser: &mut lexopt::Parser, config_path: Option<PathBuf>) -> Result<()>
     };
     if body.trim().is_empty() {
         bail!("the message body is empty");
+    }
+    if body.len() > crate::api::MAX_BODY {
+        bail!(
+            "the body is {} bytes; the limit is {}",
+            body.len(),
+            crate::api::MAX_BODY
+        );
     }
 
     let config = load_config(config_path)?;
@@ -419,7 +436,8 @@ fn discard(parser: &mut lexopt::Parser, config_path: Option<PathBuf>) -> Result<
         let mut answer = String::new();
         std::io::stdin().read_line(&mut answer)?;
         if !matches!(answer.trim().to_ascii_lowercase().as_str(), "y" | "yes") {
-            bail!("nothing discarded");
+            println!("nothing discarded");
+            return Ok(());
         }
     }
     api.discard(&id)?;

@@ -44,7 +44,7 @@ impl Api {
     ) -> Result<T> {
         let (status, raw) = self.call(method, path, body)?;
         if !(200..300).contains(&status) {
-            return Err(Failure::refused(describe_error(status, &raw)).into());
+            return Err(refusal(status, &raw).into());
         }
         serde_json::from_slice(&raw).with_context(|| {
             format!("the server answered HTTP {status} with something that is not JSON")
@@ -78,7 +78,7 @@ impl Api {
             self.call("POST", "/messages", Some(&body))
         })?;
         if !(200..300).contains(&status) {
-            return Err(Failure::refused(describe_error(status, &raw)).into());
+            return Err(refusal(status, &raw).into());
         }
         serde_json::from_slice(&raw).with_context(|| {
             format!("the server answered HTTP {status} with something that is not JSON")
@@ -94,7 +94,7 @@ impl Api {
     pub fn ack(&self, id: &str) -> Result<()> {
         let (status, raw) = self.call("POST", &format!("/messages/{id}/ack"), Some(b""))?;
         if !(200..300).contains(&status) {
-            return Err(Failure::refused(describe_error(status, &raw)).into());
+            return Err(refusal(status, &raw).into());
         }
         Ok(())
     }
@@ -104,9 +104,20 @@ impl Api {
     pub fn discard(&self, id: &str) -> Result<()> {
         let (status, raw) = self.call("POST", &format!("/messages/{id}/discard"), Some(b""))?;
         if !(200..300).contains(&status) {
-            return Err(Failure::refused(describe_error(status, &raw)).into());
+            return Err(refusal(status, &raw).into());
         }
         Ok(())
+    }
+}
+
+/// `429` and `5xx` mean "try again"; the rest of the non-2xx answers will
+/// keep saying no until somebody changes something.
+fn refusal(status: u16, raw: &[u8]) -> Failure {
+    let detail = describe_error(status, raw);
+    if status == 429 || status >= 500 {
+        Failure::temporary(detail)
+    } else {
+        Failure::refused(detail)
     }
 }
 
@@ -161,6 +172,14 @@ mod tests {
         });
         assert_eq!(result.unwrap(), 7);
         assert_eq!(calls.get(), 3);
+    }
+
+    #[test]
+    fn temporary_answers_are_told_from_permanent_ones() {
+        assert_eq!(refusal(401, b"").kind(), crate::failure::Kind::Refused);
+        assert_eq!(refusal(413, b"").kind(), crate::failure::Kind::Refused);
+        assert_eq!(refusal(429, b"").kind(), crate::failure::Kind::Temporary);
+        assert_eq!(refusal(503, b"").kind(), crate::failure::Kind::Temporary);
     }
 
     #[test]
