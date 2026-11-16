@@ -9,6 +9,7 @@ pub mod cli;
 pub mod client;
 pub mod config;
 pub mod http;
+pub mod mem;
 pub mod pull;
 pub mod server;
 pub mod store;

@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- `pull` reads `mem save --json`: it reports a new draft separately from an
+  `--ext-id` that was already here, and the notifier gets `STELE_DRAFTS` (new),
+  `STELE_ALREADY` (retries) and `STELE_PENDING` (drafts waiting after the pull).
+- `status` shows `unread` on the server and the local drafts waiting, when
+  anathem can answer; a missing `mem` only drops the local line.
+- The minimum anathem is now 1.2, for the `--json` documents.
+
 ## v0.1.0 — 2026-11-12
 
 First release. A mailbox between coding agents on different machines, with

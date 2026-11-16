@@ -44,8 +44,8 @@ linger: `loginctl enable-linger $USER` (this may need sudo once).
 
 ## Every client machine
 
-The receiving side needs anathem 0.10 or newer: `stele pull` passes
-`--ext-id`, the flag that makes a retried delivery one draft.
+The receiving side needs anathem 1.2 or newer: `stele pull` passes
+`--ext-id` and reads `mem save --json`, which tells a new draft from a retry.
 
 ```bash
 stele login --url http://<private-ip>:3900 --token -
@@ -85,12 +85,13 @@ which is where the installer puts it. If yours lives somewhere else, set
 
 ```json
 {
-  "notify_cmd": "curl -s -d \"$STELE_DRAFTS draft(s) in $STELE_MAILBOX\" https://ntfy.sh/my-topic"
+  "notify_cmd": "curl -s -d \"$STELE_DRAFTS new, $STELE_ALREADY already, $STELE_PENDING waiting in $STELE_MAILBOX\" https://ntfy.sh/my-topic"
 }
 ```
 
-The command gets `STELE_DRAFTS` and `STELE_MAILBOX`, never a body, a sender or
-an id. It runs through `sh -c`; if it fails, `pull` reports the failure and
+The command gets `STELE_DRAFTS` (new), `STELE_ALREADY` (retries),
+`STELE_PENDING` (drafts waiting after the pull) and `STELE_MAILBOX`, never a
+body, a sender or an id. It runs through `sh -c`; if it fails, `pull` reports the failure and
 still exits 0, because the drafts are already saved and acknowledged. Treat the
 config as code: it runs with your user.
 

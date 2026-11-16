@@ -76,15 +76,16 @@ The full guide — requirements, server and client setup, every config key,
 limits, upgrades and troubleshooting — is
 [`docs/installation.md`](docs/installation.md).
 
-The binary is about 2.8 MB, stripped. `rusqlite` compiles SQLite in, so there
+The binary is about 2.9 MB, stripped. `rusqlite` compiles SQLite in, so there
 is no `libsqlite3-dev` to install and nothing to match against the system.
 
-The receiving side needs **anathem 0.10 or newer**: `stele pull` hands each
-body to `mem save --external --ext-id`, so a retried delivery lands in the
-draft that already exists. An older `mem` does not know the flag; the pull
-stops before acknowledging rather than saving a duplicate. anathem 1.0 also
-announces waiting drafts in the MCP greeting, which is what keeps the mailbox
-from going unnoticed.
+The receiving side needs **anathem 1.2 or newer**: `stele pull` hands each
+body to `mem save --external --json`, which says whether it wrote a new draft
+or found the `--ext-id` already there, and `stele status` counts the drafts
+waiting with `mem recent --json`. An older `mem` does not know `--json`; the
+pull stops before acknowledging rather than guessing. anathem also announces
+waiting drafts in the MCP greeting, which is what keeps the mailbox from going
+unnoticed.
 
 ## Checks
 
@@ -155,17 +156,19 @@ unless `--yes`. Use it only for a note anathem keeps refusing: the row stays
 until its TTL, but the note is gone.
 
 `pull` can also notify a person through `notify_cmd` in the client config; it
-sees a count and the mailbox, never a message. See
+sees `STELE_DRAFTS` (new), `STELE_ALREADY` (retries), `STELE_PENDING` (drafts
+waiting locally) and the mailbox, never a message. See
 [`deploy/README.md`](deploy/README.md#notifying-a-person).
 
 `mem recent` defaults to the project derived from the directory you are
 standing in, and a message may have been filed under another one. `--all`
-shows everything, drafts included; since anathem 0.10 the command also says so
-when mail is filed under another project. anathem 1.0 goes one step further:
+shows everything, drafts included; anathem also says so when mail is filed
+under another project. anathem 1.0 goes one step further:
 the MCP greeting says how many received memories are waiting (a count and the
-command, never their content), so the agent knows to look. `mem show 42` reads
-one; `mem accept 42` lets it into search. Accepted messages keep
-`[from: laptop]` wherever they appear.
+command, never their content), so the agent knows to look. `stele status`
+shows the unread messages on the server and the drafts waiting locally.
+`mem show 42` reads one; `mem accept 42` lets it into search. Accepted messages
+keep `[from: laptop]` wherever they appear.
 
 A dropped connection during `send` is retried with the same message id, so the
 retry does not duplicate. A note that anathem refuses does not stop the batch:
@@ -220,11 +223,11 @@ what routes the note to the right work.
   archives what arrives.
 - **Does not do TLS.** Use a network that already encrypts (tailnet, VPN, SSH
   tunnel), or put the mailbox behind one; the client refuses `https://`.
-- **Delivers exactly once on anathem 0.10+.** `pull` passes `--ext-id
-  stele:<message id>`, so a retry after a lost acknowledgement writes nothing:
-  the draft that already exists is the one somebody accepts. With an older
-  `mem` the flag is rejected and the message stays in the mailbox; it never
-  falls back to a second draft.
+- **Delivers exactly once on anathem 1.2+.** `pull` passes `--ext-id
+  stele:<message id>` and reads `mem save --json`, so a retry after a lost
+  acknowledgement writes nothing and is reported as already here, not as a
+  new draft. With an older `mem` the message stays in the mailbox; it never
+  falls back to a duplicate.
 
 ## License
 

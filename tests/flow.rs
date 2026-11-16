@@ -122,16 +122,56 @@ fn pull(me: &Box, mem: &Path, log: &Path, extra: &[&str]) -> Output {
     stele(&args, &[("MEM_LOG", log)])
 }
 
-fn fake_mem(dir: &Path) -> PathBuf {
-    let path = dir.join("mem");
-    let mut file = std::fs::File::create(&path).unwrap();
-    writeln!(file, "#!/bin/sh").unwrap();
-    writeln!(
-        file,
-        "{{ printf 'ARGS %s\\n' \"$*\"; cat; printf '\\nEND\\n'; }} >> \"$MEM_LOG\""
-    )
-    .unwrap();
-    drop(file);
+const FAKE_MEM: &str = r#"#!/bin/sh
+if [ "${1:-}" = "--db" ]; then shift 2; fi
+cmd="${1:-}"
+marker='__FAIL_ON__'
+case "$cmd" in
+  save)
+    body=$(cat)
+    if [ -n "$marker" ] && printf '%s' "$body" | grep -q "$marker"; then
+      echo FAIL >> "$MEM_LOG"
+      echo 'anathem refused this note' >&2
+      exit 1
+    fi
+    { printf 'ARGS %s\n' "$*"; printf '%s\n' "$body"; printf 'END\n'; } >> "$MEM_LOG"
+    ext=""
+    prev=""
+    for a in "$@"; do
+      if [ "$prev" = "--ext-id" ]; then ext="$a"; fi
+      prev="$a"
+    done
+    ids="$MEM_LOG.ids"
+    touch "$ids"
+    if grep -qxF "$ext" "$ids" 2>/dev/null; then
+      printf '{"already_received":true,"delivery_from":"laptop","from":"laptop","id":1,"same_sender":true,"schema":1,"when":"2026-01-01T00:00:00Z","written":false}\n'
+    else
+      printf '%s\n' "$ext" >> "$ids"
+      n=$(wc -l < "$ids")
+      printf '{"already_received":false,"from":"laptop","id":%s,"project":"api","schema":1,"status":"draft","written":true}\n' "$n"
+    fi
+    ;;
+  recent)
+    n=$(cat "$MEM_LOG.drafts" 2>/dev/null || echo 0)
+    printf '{"items":['
+    i=1
+    while [ "$i" -le "$n" ]; do
+      [ "$i" -gt 1 ] && printf ','
+      printf '{"id":%s,"status":"draft"}' "$i"
+      i=$((i+1))
+    done
+    printf '],"schema":1}\n'
+    ;;
+  *)
+    printf '{}\n'
+    ;;
+esac
+"#;
+
+fn write_mem(dir: &Path, name: &str, marker: &str) -> PathBuf {
+    let path = dir.join(name);
+    let script = FAKE_MEM.replace("__FAIL_ON__", marker);
+    std::fs::write(&path, script).unwrap();
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
@@ -140,28 +180,19 @@ fn fake_mem(dir: &Path) -> PathBuf {
     path
 }
 
+fn fake_mem(dir: &Path) -> PathBuf {
+    write_mem(dir, "mem", "")
+}
+
 fn fake_mem_failing_on(dir: &Path, marker: &str) -> PathBuf {
-    let path = dir.join("mem-fail");
-    let mut file = std::fs::File::create(&path).unwrap();
-    writeln!(file, "#!/bin/sh").unwrap();
-    writeln!(file, "body=$(cat)").unwrap();
-    writeln!(file, "if printf '%s' \"$body\" | grep -q '{marker}'; then").unwrap();
-    writeln!(file, "  echo FAIL >> \"$MEM_LOG\"").unwrap();
-    writeln!(file, "  echo 'anathem refused this note' >&2").unwrap();
-    writeln!(file, "  exit 1").unwrap();
-    writeln!(file, "fi").unwrap();
-    writeln!(
-        file,
-        "{{ printf 'ARGS %s\\n' \"$*\"; printf '%s\\n' \"$body\"; printf 'END\\n'; }} >> \"$MEM_LOG\""
-    )
-    .unwrap();
-    drop(file);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
-    }
-    path
+    write_mem(dir, "mem-fail", marker)
+}
+
+fn set_mem_bin(config: &Path, bin: &Path) {
+    let text = std::fs::read_to_string(config).unwrap();
+    let mut value: serde_json::Value = serde_json::from_str(&text).unwrap();
+    value["mem_bin"] = serde_json::json!(bin.to_str().unwrap());
+    std::fs::write(config, serde_json::to_string_pretty(&value).unwrap()).unwrap();
 }
 
 #[test]
@@ -577,6 +608,9 @@ fn status_shows_the_mailbox_and_pending() {
     let server = start(&db);
     let dell = login(&server, dir.path(), "dell", &dell_token);
     let laptop = login(&server, dir.path(), "laptop", &laptop_token);
+    let mem = fake_mem(dir.path());
+    set_mem_bin(&dell.config, &mem);
+    set_mem_bin(&laptop.config, &mem);
 
     ok(send(&laptop, "dell", "api", "first"));
     ok(send(&laptop, "dell", "api", "second"));
@@ -587,14 +621,14 @@ fn status_shows_the_mailbox_and_pending() {
         &[],
     ));
     assert!(dell_status.contains("mailbox: dell"), "{dell_status}");
-    assert!(dell_status.contains("pending: 2"), "{dell_status}");
+    assert!(dell_status.contains("unread:  2"), "{dell_status}");
 
     let laptop_status = ok(stele(
         &["--config", laptop.config.to_str().unwrap(), "status"],
         &[],
     ));
     assert!(laptop_status.contains("mailbox: laptop"), "{laptop_status}");
-    assert!(laptop_status.contains("pending: 1"), "{laptop_status}");
+    assert!(laptop_status.contains("unread:  1"), "{laptop_status}");
 }
 
 #[test]
@@ -680,13 +714,15 @@ fn a_mailbox_name_can_carry_a_dot_and_an_at() {
     let token = token(&db, "claude-code@laptop");
     let server = start(&db);
     let config = login(&server, dir.path(), "claude-code@laptop", &token);
+    let mem = fake_mem(dir.path());
+    set_mem_bin(&config.config, &mem);
     ok(send(&config, "claude-code@laptop", "kipin.pe", "hello"));
     let status = ok(stele(
         &["--config", config.config.to_str().unwrap(), "status"],
         &[],
     ));
     assert!(status.contains("mailbox: claude-code@laptop"), "{status}");
-    assert!(status.contains("pending: 1"), "{status}");
+    assert!(status.contains("unread:  1"), "{status}");
 }
 
 #[test]
@@ -708,6 +744,8 @@ fn discard_requires_yes_and_removes_only_that_message() {
     let dell_token = token(&db, "dell");
     let server = start(&db);
     let dell = login(&server, dir.path(), "dell", &dell_token);
+    let mem = fake_mem(dir.path());
+    set_mem_bin(&dell.config, &mem);
 
     let keep = ok(send(&dell, "dell", "api", "keep me"));
     let keep_id = keep.trim_start_matches("queued as ");
@@ -731,7 +769,7 @@ fn discard_requires_yes_and_removes_only_that_message() {
         &["--config", dell.config.to_str().unwrap(), "status"],
         &[],
     ));
-    assert!(status.contains("pending: 2"), "{status}");
+    assert!(status.contains("unread:  2"), "{status}");
 
     let done = ok(stele(
         &[
@@ -748,7 +786,7 @@ fn discard_requires_yes_and_removes_only_that_message() {
         &["--config", dell.config.to_str().unwrap(), "status"],
         &[],
     ));
-    assert!(status.contains("pending: 1"), "{status}");
+    assert!(status.contains("unread:  1"), "{status}");
 
     let mem = fake_mem(dir.path());
     let log = dir.path().join("mem.log");
@@ -768,6 +806,8 @@ fn another_mailbox_cannot_discard_a_message() {
     let server = start(&db);
     let dell = login(&server, dir.path(), "dell", &dell_token);
     let laptop = login(&server, dir.path(), "laptop", &laptop_token);
+    let mem = fake_mem(dir.path());
+    set_mem_bin(&dell.config, &mem);
     let sent = ok(send(&dell, "dell", "api", "not the laptop's"));
     let id = sent.trim_start_matches("queued as ");
 
@@ -788,7 +828,7 @@ fn another_mailbox_cannot_discard_a_message() {
         &["--config", dell.config.to_str().unwrap(), "status"],
         &[],
     ));
-    assert!(status.contains("pending: 1"), "{status}");
+    assert!(status.contains("unread:  1"), "{status}");
 }
 
 fn notifier(dir: &Path) -> PathBuf {
@@ -797,7 +837,7 @@ fn notifier(dir: &Path) -> PathBuf {
     writeln!(file, "#!/bin/sh").unwrap();
     writeln!(
         file,
-        "printf '%s %s\\n' \"$STELE_DRAFTS\" \"$STELE_MAILBOX\" >> \"$(dirname \"$0\")/notify.log\""
+        "printf '%s %s %s %s\\n' \"$STELE_DRAFTS\" \"$STELE_ALREADY\" \"${{STELE_PENDING:-}}\" \"$STELE_MAILBOX\" >> \"$(dirname \"$0\")/notify.log\""
     )
     .unwrap();
     drop(file);
@@ -834,11 +874,13 @@ fn a_notifier_runs_only_when_a_draft_is_written() {
 
     ok(send(&dell, "dell", "api", "one"));
     ok(send(&dell, "dell", "api", "two"));
+    // Three drafts already waiting in anathem; the notifier should see them.
+    std::fs::write(dir.path().join("mem.log.drafts"), "3\n").unwrap();
     ok(pull(&dell, &mem, &log, &[]));
     assert_eq!(
         std::fs::read_to_string(&notify_log).unwrap(),
-        "2 dell\n",
-        "the notifier gets a count and the mailbox, nothing else"
+        "2 0 3 dell\n",
+        "the notifier gets the new count, the retries, the local total and the mailbox"
     );
 
     // A message anathem refuses writes no draft, so it does not notify.
@@ -853,4 +895,60 @@ fn a_notifier_runs_only_when_a_draft_is_written() {
             .count(),
         1
     );
+}
+
+#[test]
+fn status_counts_local_drafts_and_survives_a_missing_mem() {
+    let dir = tempdir();
+    let db = dir.path().join("stele.db");
+    let dell_token = token(&db, "dell");
+    let server = start(&db);
+    let dell = login(&server, dir.path(), "dell", &dell_token);
+    let mem = fake_mem(dir.path());
+    set_mem_bin(&dell.config, &mem);
+    let log = dir.path().join("mem.log");
+    std::fs::write(dir.path().join("mem.log.drafts"), "3\n").unwrap();
+
+    let status = ok(stele(
+        &["--config", dell.config.to_str().unwrap(), "status"],
+        &[("MEM_LOG", &log)],
+    ));
+    assert!(status.contains("unread:  0"), "{status}");
+    assert!(status.contains("local:   3 drafts waiting"), "{status}");
+
+    // A missing mem must not take the server side of status down.
+    set_mem_bin(&dell.config, Path::new("/nonexistent/stele-mem"));
+    let status = ok(stele(
+        &["--config", dell.config.to_str().unwrap(), "status"],
+        &[],
+    ));
+    assert!(status.contains("unread:  0"), "{status}");
+    assert!(!status.contains("local:"), "{status}");
+}
+
+#[test]
+fn pull_tells_a_new_draft_from_a_retry() {
+    let dir = tempdir();
+    let db = dir.path().join("stele.db");
+    let dell_token = token(&db, "dell");
+    let server = start(&db);
+    let dell = login(&server, dir.path(), "dell", &dell_token);
+    let sent = ok(send(&dell, "dell", "api", "retry me"));
+    assert!(sent.starts_with("queued as "));
+    let mem = fake_mem(dir.path());
+    let log = dir.path().join("mem.log");
+
+    let first = ok(pull(&dell, &mem, &log, &[]));
+    assert!(first.contains("draft "), "{first}");
+
+    // Simulate the lost acknowledgement the retry exists for.
+    let conn = rusqlite::Connection::open(&db).unwrap();
+    conn.execute("update messages set delivered_at = null", [])
+        .unwrap();
+    drop(conn);
+
+    let second = ok(pull(&dell, &mem, &log, &[]));
+    assert!(second.contains("already here"), "{second}");
+    assert!(!second.contains("draft "), "{second}");
+    assert!(second.contains("(memory 1)"), "{second}");
 }

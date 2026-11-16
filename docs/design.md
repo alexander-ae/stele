@@ -21,10 +21,11 @@ A remote agent cannot write into your memory. It can leave something you
 accept. That is the difference between a mailbox and an open door, and it is
 why this is a separate program instead of an option inside `mem`.
 
-The receiving side needs **anathem 0.10 or newer**, which added
-`mem save --external --ext-id` (anathem#59), the one patch this design asked
-for: `pull` passes `ext_id = stele:<message-id>`, so a retried delivery lands
-in the draft that already exists instead of writing a second one.
+The receiving side needs **anathem 1.2 or newer**, which has
+`mem save --external --json` and `recent --json` with `status`. `pull` passes
+`ext_id = stele:<message-id>` and reads the JSON: a retried delivery is
+reported as already here, not as a new draft, and `status` can count the
+drafts still waiting.
 
 ## The commands
 
@@ -136,7 +137,7 @@ zero. The alternative — marking on hand-over — silently loses a message when
 the response is cut, which is the wrong failure for a mailbox whose whole
 point is not losing the note.
 
-Delivery is exactly-once as long as the receiving `mem` is anathem 0.10 or
+Delivery is exactly-once as long as the receiving `mem` is anathem 1.2 or
 newer: `pull` passes `--ext-id stele:<message id>`, the server's random and
 stable id, and a retry after a lost acknowledgement writes nothing because
 anathem already holds that identifier. The first attempt's draft is the one
@@ -180,7 +181,7 @@ running. Measured on the Dell (Ubuntu 26.04, 4 cores), release build with
 
 | | target | measured |
 |---|---|---|
-| binary | 2.5–3 MB | 2.81 MB |
+| binary | 2.5–3 MB | 2.86 MB |
 | RSS, idle | ~6 MB | 5.7 MB, one thread |
 | CPU, idle | 0% | 0 ticks over 10 s |
 | local latency | < 1 ms | send p50 0.24 ms, p99 0.82 ms; ack p50 0.15 ms |
@@ -220,10 +221,10 @@ that led here, with the size each crate adds to a stripped binary, is in
   removes an unmaintained dependency from a security-sensitive path.
 - **An acknowledgement endpoint.** Marking on hand-over loses messages; see
   Storage.
-- **`--ext-id` from anathem 0.10.** The proposal left delivery at-least-once
-  and the flag as an open question; anathem shipped it, and `pull` uses it, so
-  a retried delivery is one draft. The mailbox now requires anathem 0.10 rather
-  than saving without the key.
+- **`--ext-id` and `--json`.** The proposal left delivery at-least-once and
+the flag as an open question; anathem shipped `--ext-id` and later `--json`,
+and `pull` uses both. A retried delivery is one draft, and the notifier can
+tell new drafts from retries. The mailbox now requires anathem 1.2.
 - **The greeting announces drafts.** anathem 1.0 adds a count and the command
   when received memories are waiting (22 tokens, only when there are any), so
   the mailbox no longer depends on somebody remembering to look.
