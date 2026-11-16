@@ -15,9 +15,11 @@ and hands each one to anathem as a draft; it does not keep memory of its own.
   truth for the minimum.
 - **A prebuilt platform**: Linux x86_64 (glibc 2.34 or newer) or macOS
   arm64/x86_64. Other platforms can use `--build` with Rust and a C compiler.
-- **anathem 0.10 or newer** on every receiving machine: `pull` passes
-  `mem save --external --ext-id`, which older versions do not know. anathem
-  1.0 adds the greeting count that says drafts are waiting.
+- **anathem 1.2 or newer** on every receiving machine: `pull` passes
+  `mem save --external --json` to tell a new draft from a retry, and `status`
+  reads `mem recent --json` to count the drafts waiting. Older versions do not
+  know `--json`. anathem also adds the greeting count that says drafts are
+  waiting.
 - **A Unix-like host** for the `sh -c` used by `notify_cmd` and for the
   systemd examples. The core is portable; the deployment examples are not
   Windows.
@@ -133,7 +135,7 @@ curl -s http://<private-ip>:3900/health   # {"ok":true}
 stele login --url http://<private-ip>:3900 --token -
 # paste the token from `token add`, then Ctrl-D
 stele whoami     # prints the mailbox name
-stele status     # server, mailbox and pending count
+stele status     # unread on the server and drafts waiting here
 ```
 
 `login` checks the token with `GET /me` before writing
@@ -164,8 +166,21 @@ mem accept 42
 ```
 
 `--all` matters: `mem recent` defaults to the project of the directory you are
-in, and the sender chose the project. anathem 0.10 also says when mail is
-filed under another project.
+in, and the sender chose the project. anathem also says when mail is filed
+under another project.
+
+`stele status` prints both sides:
+
+```
+server:  100.95.129.72:3900
+mailbox: dell
+unread:  2
+local:   3 drafts waiting
+```
+
+`unread` is what is still on the server; `local` is what arrived and nobody
+has accepted yet. If `mem` is missing or the database does not exist, the
+local line is skipped and the command still succeeds.
 
 A note that anathem keeps refusing can be acknowledged without a draft:
 
@@ -199,7 +214,7 @@ keys; the rest are optional.
   "token": "…",
   "mem_bin": "/home/alexander/.local/bin/mem",
   "mem_db": "/home/alexander/.anathem/mem.db",
-  "notify_cmd": "ntfy publish stele \"$STELE_DRAFTS draft(s) in $STELE_MAILBOX\""
+  "notify_cmd": "ntfy publish stele \"$STELE_DRAFTS new, $STELE_ALREADY already, $STELE_PENDING waiting in $STELE_MAILBOX\""
 }
 ```
 
@@ -213,7 +228,9 @@ Resolution order for the file: `$STELE_CONFIG`, then
 |---|---|---|
 | `STELE_CONFIG` | client | config file path. |
 | `STELE_DB` | `serve`, `token` | server database path. |
-| `STELE_DRAFTS` | `notify_cmd` | number of drafts just written. |
+| `STELE_DRAFTS` | `notify_cmd` | drafts written by this pull (new, not retries). |
+| `STELE_ALREADY` | `notify_cmd` | deliveries whose `--ext-id` was already here. |
+| `STELE_PENDING` | `notify_cmd` | drafts waiting locally after the pull, when anathem can answer. |
 | `STELE_MAILBOX` | `notify_cmd` | mailbox that received them. |
 
 Defaults for the server database: `$XDG_DATA_HOME/stele/stele.db`, then
@@ -237,7 +254,7 @@ Defaults for the server database: `$XDG_DATA_HOME/stele/stele.db`, then
 |---|---|
 | `login --url URL --token TOKEN\|-` | validates the token and writes the config. |
 | `whoami` | the mailbox this machine is. |
-| `status` | server, mailbox, pending count. |
+| `status` | server, mailbox, unread on the server and drafts waiting locally. |
 | `peers` | every mailbox the server knows. |
 | `send --to M --project P [BODY\|-]` | queues one message; retries a transport failure with the same id. |
 | `pull [--dry-run] [--limit N] [--mem PATH] [--mem-db PATH]` | fetches unread and writes drafts; default limit 50, max 200. |
@@ -299,7 +316,7 @@ do not control, wrap the port (VPN, tailnet, SSH) instead of exposing it.
 | `HTTP 429` | the recipient has 200 unread: `stele status`, then `pull` or `discard`. |
 | `there is no mailbox "x"` | `stele --db … token add x` on the server, or `stele peers`. |
 | `cannot run "mem"` | `mem` is not on `PATH`; set `mem_bin` or fix the unit's `PATH`. |
-| `stele needs anathem 0.10 or newer` | upgrade `mem` on the receiving machine. |
+| `stele needs anathem 1.2 or newer` | upgrade `mem` on the receiving machine: `--json` is missing. |
 | `response … is too large` | an old client before the byte-batched inbox; upgrade stele. |
 | `stele speaks plain HTTP` | replace `https://` with `http://` over a private network or tunnel. |
 | `discard` returns 404 | the id is not a pending message for this mailbox. |

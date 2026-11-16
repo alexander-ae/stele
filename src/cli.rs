@@ -3,6 +3,7 @@
 use crate::api::SendRequest;
 use crate::client::Api;
 use crate::config::{self, ClientConfig};
+use crate::mem::Mem;
 use crate::pull;
 use crate::server;
 use crate::store::Store;
@@ -220,11 +221,17 @@ fn peers(parser: &mut lexopt::Parser, config_path: Option<PathBuf>) -> Result<()
 fn status(parser: &mut lexopt::Parser, config_path: Option<PathBuf>) -> Result<()> {
     no_arguments(parser)?;
     let config = load_config(config_path)?;
+    let mem = Mem::new(config.mem_bin.clone(), config.mem_db.clone());
     let api = Api::new(&config.url, config.token)?;
     let status = api.status()?;
     println!("server:  {}", api.endpoint.authority);
     println!("mailbox: {}", status.mailbox);
-    println!("pending: {}", status.pending);
+    println!("unread:  {}", status.pending);
+    // The local side is optional: a mailbox that only sends still has a
+    // useful status when anathem is missing.
+    if let Ok(local) = mem.drafts_waiting() {
+        println!("local:   {local} drafts waiting");
+    }
     Ok(())
 }
 
@@ -308,22 +315,36 @@ fn pull_command(parser: &mut lexopt::Parser, config_path: Option<PathBuf>) -> Re
     let config = load_config(config_path)?;
     let mailbox = config.mailbox.clone();
     let notify_cmd = config.notify_cmd.clone();
+    let mem_bin = mem_bin.or_else(|| config.mem_bin.clone());
+    let mem_db = mem_db.or_else(|| config.mem_db.clone());
     let api = Api::new(&config.url, config.token)?;
     let options = pull::Options {
         dry_run,
         limit,
-        mem_bin: mem_bin.or(config.mem_bin),
-        mem_db: mem_db.or(config.mem_db),
+        mem_bin: mem_bin.clone(),
+        mem_db: mem_db.clone(),
     };
-    let count = pull::run(&api, &options)?;
-    if !dry_run && count > 0 {
+    let summary = pull::run(&api, &options)?;
+    if !dry_run && summary.written > 0 {
         if let Some(command) = notify_cmd.as_deref() {
-            if let Err(error) = pull::notify(command, &mailbox, count) {
+            // The local total is best-effort: the notifier still learns how
+            // many drafts this pull wrote when anathem cannot answer.
+            let pending = Mem::new(mem_bin, mem_db).drafts_waiting().ok();
+            if let Err(error) =
+                pull::notify(command, &mailbox, summary.written, summary.already, pending)
+            {
                 // The drafts are already saved and acknowledged; a broken
                 // notifier is not a delivery failure.
                 eprintln!("stele: notification failed: {error:#}");
             }
         }
+    }
+    if summary.failed > 0 {
+        bail!(
+            "{} of {} messages could not be delivered; they stay unread",
+            summary.failed,
+            summary.total
+        );
     }
     Ok(())
 }
