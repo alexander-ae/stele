@@ -8,6 +8,9 @@
 - `status` shows `unread` on the server and the local drafts waiting, when
   anathem can answer; a missing `mem` only drops the local line.
 - The minimum anathem is now 1.2, for the `--json` documents.
+- GitHub Actions runs `fmt`, `clippy` and the tests on every pushed branch, on
+  Linux and macOS (36 s on a cold cache). GitLab mirrors each branch to
+  `alexander-ae/stele`, which is what triggers the run.
 
 ## v0.1.0 — 2026-11-12
 

@@ -94,6 +94,10 @@ make check   # fmt, clippy and tests
 make build   # the release binary
 ```
 
+The same checks run in GitHub Actions on every push and pull request, on Linux
+and macOS. GitLab mirrors every branch to `alexander-ae/stele`, so a branch is
+tested whether it is opened as a GitLab merge request or not.
+
 ## Set it up
 
 On the machine that is always on — the mailbox:
